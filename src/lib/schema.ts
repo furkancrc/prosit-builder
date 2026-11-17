@@ -44,7 +44,7 @@ export const SettingsSchema = z.object({
   bloc: short,
   filenameTemplate: z.string().trim().min(1).max(200),
   accentColor: hexColor,
-  docHeadingColor: hexColor,
+  docSecondaryColor: hexColor,
   colorMode: z.enum(["light", "dark"]),
   docFont: z.enum(DOC_FONTS),
 });
@@ -56,7 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bloc: "",
   filenameTemplate: "Prosit_{type}_{theme}_-_{numero}",
   accentColor: "#FFE600",
-  docHeadingColor: "#4472C4",
+  docSecondaryColor: "#EE85A0",
   colorMode: "light",
   docFont: "Arial",
 };

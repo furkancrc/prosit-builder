@@ -4,13 +4,15 @@ import {
   Document,
   Footer,
   Header,
-  HeadingLevel,
   LevelFormat,
+  LevelSuffix,
   Packer,
   PageNumber,
   Paragraph,
+  ShadingType,
   Table,
   TableCell,
+  TableLayoutType,
   TableRow,
   TextRun,
   WidthType,
@@ -20,109 +22,196 @@ import type { Content, DocType, Meta, Settings } from "../schema";
 import { buildDocModel, type Block } from "../doc-model";
 import type { ListStyle } from "../templates";
 
+/**
+ * Mise en page reprise du modèle « Prosit_Aller_Stats_OS.docx » :
+ * en-tête « CESI _ÉCOLE D'INGÉNIEURS » souligné en jaune, bandeau noir « PROSIT ALLER »,
+ * bloc jaune « Boucle PBL : … », sections avec repère jaune + filet noir, puces ■ roses,
+ * pied de page « PROSIT _ n ».
+ */
+
 const hex = (c: string) => c.replace("#", "").toUpperCase();
 
-/** Éclaircit une couleur (t = 0..1 vers le blanc). #4472C4 à 40 % ≈ #8EAADB (Titre 2 du template). */
-export function tint(color: string, t: number): string {
+function readableOn(color: string): string {
   const n = parseInt(hex(color), 16);
-  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v + (255 - v) * t));
-  return ch.map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase();
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "000000" : "FFFFFF";
 }
 
-const INDENT = 720; // 1,27 cm comme le « Paragraphe de liste » du template
-const HANG = 360;
+// Dimensions du modèle (twips, A4)
+const PAGE_W = 11906;
+const MARGIN_X = 1134;
+const CONTENT_W = PAGE_W - 2 * MARGIN_X; // 9638
+const LIST_LEFT = 510;
+const LIST_HANG = 283;
+const LIST_STEP = 397;
 
-function lvl(level: number, format: (typeof LevelFormat)[keyof typeof LevelFormat], text: string): ILevelsOptions {
-  return {
-    level,
-    format,
-    text,
-    alignment: AlignmentType.LEFT,
-    style: { paragraph: { indent: { left: INDENT * (level + 1), hanging: HANG } } },
-  };
-}
+// Tailles (demi-points)
+const SZ_BODY = 21; // 10,5 pt
+const SZ_SECTION = 30; // 15 pt
+const SZ_TITLE = 40; // 20 pt
+const SZ_BANNER = 22; // 11 pt
+const SZ_BULLET = 14; // 7 pt
 
-const NUMBERING: Record<ListStyle | "h1" | "h2", ILevelsOptions[]> = {
-  h1: [{ level: 0, format: LevelFormat.UPPER_ROMAN, text: "%1.", alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 794, hanging: 794 } } } }],
-  h2: [{ level: 0, format: LevelFormat.DECIMAL, text: "%1)", alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 720, hanging: 360 } } } }],
-  bullet: [lvl(0, LevelFormat.BULLET, "-"), lvl(1, LevelFormat.BULLET, "o"), lvl(2, LevelFormat.BULLET, "▪")],
-  numbered: [lvl(0, LevelFormat.DECIMAL, "%1."), lvl(1, LevelFormat.LOWER_LETTER, "%2."), lvl(2, LevelFormat.LOWER_ROMAN, "%3.")],
-  "bullet-numbered": [lvl(0, LevelFormat.BULLET, "-"), lvl(1, LevelFormat.DECIMAL, "%2."), lvl(2, LevelFormat.LOWER_LETTER, "%3.")],
-};
+const NONE = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" } as const;
+const NO_BORDERS = { top: NONE, bottom: NONE, left: NONE, right: NONE };
+const TABLE_NO_BORDERS = { ...NO_BORDERS, insideHorizontal: NONE, insideVertical: NONE };
 
 export interface BuildOptions {
   meta: Meta;
   type: DocType;
   content: Content;
-  settings: Pick<Settings, "docFont" | "docHeadingColor" | "accentColor">;
-}
-
-const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" } as const;
-
-function infoTable(info: { label: string; value: string }[], font: string): Table {
-  return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    columnWidths: [2000, 7000],
-    borders: { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER, insideHorizontal: NO_BORDER, insideVertical: NO_BORDER },
-    rows: info.map(
-      (i) =>
-        new TableRow({
-          children: [
-            new TableCell({
-              width: { size: 2000, type: WidthType.DXA },
-              children: [new Paragraph({ spacing: { after: 0 }, children: [new TextRun({ text: `${i.label} :`, bold: true, font, size: 20 })] })],
-            }),
-            new TableCell({
-              width: { size: 7000, type: WidthType.DXA },
-              children: [new Paragraph({ spacing: { after: 0 }, children: [new TextRun({ text: i.value, font, size: 20 })] })],
-            }),
-          ],
-        }),
-    ),
-  });
-}
-
-function blockToParagraphs(b: Block, h2Instance: (section: number) => number): Paragraph[] {
-  switch (b.kind) {
-    case "h1":
-      return [new Paragraph({ heading: HeadingLevel.HEADING_1, numbering: { reference: "h1", level: 0 }, text: b.text })];
-    case "h2":
-      return [new Paragraph({ heading: HeadingLevel.HEADING_2, numbering: { reference: "h2", level: 0, instance: h2Instance(b.section) }, text: b.text })];
-    case "para":
-      return [new Paragraph({ text: b.text })];
-    case "empty":
-      return [new Paragraph({ children: [new TextRun({ text: b.text, color: "999999" })] })];
-    case "list":
-      return b.items.map(
-        (it) =>
-          new Paragraph({
-            style: "ListParagraph",
-            numbering: { reference: b.style, level: it.level, instance: b.instance },
-            text: it.text,
-          }),
-      );
-  }
+  settings: Pick<Settings, "docFont" | "docSecondaryColor" | "accentColor">;
 }
 
 export function buildDocument({ meta, type, content, settings }: BuildOptions): Document {
   const model = buildDocModel(meta, type, content);
   const font = settings.docFont;
-  const h1Color = hex(settings.docHeadingColor);
-  const h2Color = tint(settings.docHeadingColor, 0.4);
+  const accent = hex(settings.accentColor);
+  const secondary = hex(settings.docSecondaryColor);
 
-  const children: (Paragraph | Table)[] = [
-    new Paragraph({ heading: HeadingLevel.TITLE, text: model.title }),
-  ];
-  if (model.info.length) {
-    children.push(new Paragraph({ spacing: { after: 0 }, text: "" }));
-    children.push(infoTable(model.info, font));
-  }
-  const h2Instances = new Map<number, number>();
-  const h2Instance = (s: number) => {
-    if (!h2Instances.has(s)) h2Instances.set(s, h2Instances.size + 1);
-    return h2Instances.get(s)!;
+  const run = (text: string, o: { bold?: boolean; size?: number; color?: string } = {}) =>
+    new TextRun({ text, font, bold: o.bold ?? false, size: o.size ?? SZ_BODY, color: o.color ?? "000000" });
+
+  // ---------- numérotation (puces ■ roses, sous-niveaux numérotés) ----------
+  const markerRun = { bold: true, color: secondary, size: SZ_BULLET, font };
+  const numRun = { bold: true, color: secondary, size: SZ_BODY, font };
+  const lvl = (level: number, format: (typeof LevelFormat)[keyof typeof LevelFormat], text: string): ILevelsOptions => ({
+    level,
+    format,
+    text,
+    alignment: AlignmentType.LEFT,
+    suffix: LevelSuffix.SPACE,
+    style: {
+      run: format === LevelFormat.BULLET ? markerRun : numRun,
+      paragraph: { indent: { left: LIST_LEFT + level * LIST_STEP, hanging: LIST_HANG } },
+    },
+  });
+  const numbering: Record<ListStyle, ILevelsOptions[]> = {
+    bullet: [lvl(0, LevelFormat.BULLET, "■"), lvl(1, LevelFormat.BULLET, "■"), lvl(2, LevelFormat.BULLET, "■")],
+    numbered: [lvl(0, LevelFormat.DECIMAL, "%1."), lvl(1, LevelFormat.LOWER_LETTER, "%2."), lvl(2, LevelFormat.LOWER_ROMAN, "%3.")],
+    "bullet-numbered": [lvl(0, LevelFormat.BULLET, "■"), lvl(1, LevelFormat.DECIMAL, "%2."), lvl(2, LevelFormat.LOWER_LETTER, "%3.")],
   };
-  for (const b of model.blocks) children.push(...blockToParagraphs(b, h2Instance));
+
+  // ---------- blocs ----------
+  const spacer = (after: number) => new Paragraph({ spacing: { after, before: 0 }, children: [] });
+
+  const sectionHeading = (title: string, num?: string) =>
+    new Table({
+      width: { size: CONTENT_W, type: WidthType.DXA },
+      columnWidths: [340, CONTENT_W - 340],
+      layout: TableLayoutType.FIXED,
+      borders: TABLE_NO_BORDERS,
+      rows: [
+        new TableRow({
+          cantSplit: true,
+          children: [
+            new TableCell({
+              width: { size: 340, type: WidthType.DXA },
+              borders: NO_BORDERS,
+              shading: { type: ShadingType.CLEAR, color: "auto", fill: accent },
+              margins: { top: 0, bottom: 0, left: 0, right: 0 },
+              children: [new Paragraph({ keepNext: true, spacing: { after: 0 }, children: [run(" ", { size: 24 })] })],
+            }),
+            new TableCell({
+              width: { size: CONTENT_W - 340, type: WidthType.DXA },
+              borders: { ...NO_BORDERS, bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" } },
+              margins: { top: 60, bottom: 60, left: 160, right: 60 },
+              children: [
+                new Paragraph({
+                  keepNext: true,
+                  spacing: { after: 0 },
+                  children: [
+                    ...(num ? [run(`${num} `, { bold: true, size: SZ_SECTION, color: secondary })] : []),
+                    run(title, { bold: true, size: SZ_SECTION }),
+                  ],
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    });
+
+  const blockToChildren = (b: Block): (Paragraph | Table)[] => {
+    switch (b.kind) {
+      case "section":
+        return [spacer(120), sectionHeading(b.title, b.num), new Paragraph({ keepNext: true, spacing: { after: 0, line: 80, lineRule: "exact" }, children: [] })];
+      case "subheading":
+        return [new Paragraph({ keepNext: true, spacing: { after: 60 }, children: [run(b.text, { bold: true, size: 22 })] })];
+      case "para":
+        return [new Paragraph({ spacing: { after: 60, line: 276 }, children: [run(b.text)] })];
+      case "empty":
+        return [new Paragraph({ spacing: { after: 60 }, children: [run(b.text, { color: "999999" })] })];
+      case "roles":
+        return b.items.map(
+          (r) =>
+            new Paragraph({
+              spacing: { after: 60 },
+              numbering: { reference: "bullet", level: 0, instance: 0 },
+              children: [run(`${r.label} : ${r.value}`, { bold: true })],
+            }),
+        );
+      case "list":
+        return b.items.map(
+          (it) =>
+            new Paragraph({
+              spacing: { after: 60 },
+              numbering: { reference: b.style, level: it.level, instance: b.instance },
+              children: [run(it.text)],
+            }),
+        );
+    }
+  };
+
+  // ---------- en-tête du document ----------
+  const banner = new Table({
+    width: { size: CONTENT_W, type: WidthType.DXA },
+    columnWidths: [3402, CONTENT_W - 3402],
+    layout: TableLayoutType.FIXED,
+    borders: TABLE_NO_BORDERS,
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 3402, type: WidthType.DXA },
+            borders: NO_BORDERS,
+            shading: { type: ShadingType.CLEAR, color: "auto", fill: "000000" },
+            margins: { top: 80, bottom: 80, left: 200, right: 200 },
+            children: [new Paragraph({ spacing: { after: 0 }, children: [run(model.banner, { bold: true, size: SZ_BANNER, color: "FFFFFF" })] })],
+          }),
+          new TableCell({
+            width: { size: CONTENT_W - 3402, type: WidthType.DXA },
+            borders: NO_BORDERS,
+            children: [new Paragraph({ spacing: { after: 0 }, children: [] })],
+          }),
+        ],
+      }),
+    ],
+  });
+
+  const titleBlock = new Table({
+    width: { size: CONTENT_W, type: WidthType.DXA },
+    columnWidths: [CONTENT_W],
+    layout: TableLayoutType.FIXED,
+    borders: TABLE_NO_BORDERS,
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: CONTENT_W, type: WidthType.DXA },
+            borders: NO_BORDERS,
+            shading: { type: ShadingType.CLEAR, color: "auto", fill: accent },
+            margins: { top: 260, bottom: 260, left: 260, right: 260 },
+            children: [new Paragraph({ spacing: { after: 0 }, children: [run(model.title, { bold: true, size: SZ_TITLE, color: readableOn(settings.accentColor) })] })],
+          }),
+        ],
+      }),
+    ],
+  });
+
+  const children: (Paragraph | Table)[] = [banner, titleBlock];
+  if (model.info) children.push(new Paragraph({ spacing: { before: 80, after: 0 }, children: [run(model.info, { size: 17, color: "666666" })] }));
+  for (const b of model.blocks) children.push(...blockToChildren(b));
 
   return new Document({
     creator: meta.auteur || "Prosit Builder",
@@ -130,61 +219,27 @@ export function buildDocument({ meta, type, content, settings }: BuildOptions): 
     description: meta.theme,
     styles: {
       default: {
-        document: { run: { font, size: 22 }, paragraph: { spacing: { after: 160, line: 259 } } },
+        document: { run: { font, size: SZ_BODY }, paragraph: { spacing: { after: 60, line: 276 } } },
       },
-      paragraphStyles: [
-        {
-          id: "Title",
-          name: "Title",
-          basedOn: "Normal",
-          next: "Normal",
-          quickFormat: true,
-          run: { font, size: 72, color: h1Color },
-          paragraph: {
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 0, line: 240 },
-            border: { bottom: { style: BorderStyle.SINGLE, size: 12, space: 4, color: hex(settings.accentColor) } },
-          },
-        },
-        {
-          id: "Heading1",
-          name: "Heading 1",
-          basedOn: "Normal",
-          next: "Normal",
-          quickFormat: true,
-          run: { font, size: 40, color: h1Color },
-          paragraph: { keepNext: true, keepLines: true, spacing: { before: 240, after: 120 } },
-        },
-        {
-          id: "Heading2",
-          name: "Heading 2",
-          basedOn: "Normal",
-          next: "Normal",
-          quickFormat: true,
-          run: { font, size: 32, color: h2Color },
-          paragraph: { keepNext: true, keepLines: true, spacing: { before: 40, after: 60 } },
-        },
-        {
-          id: "ListParagraph",
-          name: "List Paragraph",
-          basedOn: "Normal",
-          quickFormat: true,
-          paragraph: { contextualSpacing: true, spacing: { line: 256 }, indent: { left: INDENT } },
-        },
-      ],
     },
     numbering: {
-      config: Object.entries(NUMBERING).map(([reference, levels]) => ({ reference, levels })),
+      config: Object.entries(numbering).map(([reference, levels]) => ({ reference, levels })),
     },
     sections: [
       {
-        properties: { page: { margin: { top: 1417, bottom: 1417, left: 1417, right: 1417 } } },
+        properties: {
+          page: {
+            size: { width: PAGE_W, height: 16838 },
+            margin: { top: 1247, right: MARGIN_X, bottom: 1134, left: MARGIN_X, header: 720, footer: 720 },
+          },
+        },
         headers: {
           default: new Header({
             children: [
               new Paragraph({
-                alignment: AlignmentType.RIGHT,
-                children: [new TextRun({ text: model.header, size: 16, color: "808080", font })],
+                spacing: { after: 0 },
+                border: { bottom: { style: BorderStyle.SINGLE, size: 18, space: 4, color: accent } },
+                children: [run("CESI", { bold: true, size: 28 }), run("  _ÉCOLE D'INGÉNIEURS", { bold: true, size: 16 })],
               }),
             ],
           }),
@@ -194,9 +249,7 @@ export function buildDocument({ meta, type, content, settings }: BuildOptions): 
             children: [
               new Paragraph({
                 alignment: AlignmentType.RIGHT,
-                children: [
-                  new TextRun({ children: ["Page ", PageNumber.CURRENT, " sur ", PageNumber.TOTAL_PAGES], size: 18, font }),
-                ],
+                children: [new TextRun({ children: ["PROSIT  _  ", PageNumber.CURRENT], font, bold: true, size: 16 })],
               }),
             ],
           }),

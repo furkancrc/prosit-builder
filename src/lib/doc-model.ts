@@ -1,35 +1,48 @@
 import type { Content, DocType, ListItem, Meta } from "./schema";
 import { normalizeList } from "./schema";
-import { coerceContent, getTemplate, type ListStyle } from "./templates";
-import { docTitle, formatDateFr } from "./meta";
+import { coerceContent, getTemplate, sectionNumbers, type ListStyle } from "./templates";
+import { formatDateFr } from "./meta";
 
 /** Représentation intermédiaire partagée par l'aperçu HTML et l'export .docx. */
 export type Block =
-  | { kind: "h1"; text: string; index: number }
-  | { kind: "h2"; text: string; index: number; section: number }
+  | { kind: "section"; title: string; num?: string }
+  | { kind: "subheading"; text: string }
   | { kind: "para"; text: string }
   | { kind: "list"; style: ListStyle; items: ListItem[]; instance: number }
+  | { kind: "roles"; items: { label: string; value: string }[] }
   | { kind: "empty"; text: string };
 
 export interface DocModel {
   type: DocType;
+  /** Bandeau noir : « PROSIT ALLER » / « PROSIT RETOUR ». */
+  banner: string;
+  /** Bloc jaune : « Boucle PBL : <thème> ». */
   title: string;
-  header: string;
-  info: { label: string; value: string }[];
+  /** Ligne d'informations sous le titre (numéro, bloc, auteur, groupe, date). */
+  info: string;
   blocks: Block[];
 }
 
 export function buildDocModel(meta: Meta, type: DocType, rawContent: Content): DocModel {
   const tpl = getTemplate(type);
   const content = coerceContent(tpl, rawContent);
+  const nums = sectionNumbers(tpl);
   const blocks: Block[] = [];
   let listInstance = 0;
 
   tpl.sections.forEach((section, si) => {
-    blocks.push({ kind: "h1", text: section.title, index: si + 1 });
-    let h2 = 0;
+    const n = nums[si];
+    blocks.push({ kind: "section", title: section.title.toUpperCase(), num: n ? toRoman(n) : undefined });
+
+    const roles = section.fields.filter((f) => f.kind === "role");
+    if (roles.length) {
+      const items = roles.map((f) => ({ label: f.label, value: String(content[f.key] ?? "").trim() })).filter((r) => r.value);
+      blocks.push(items.length ? { kind: "roles", items } : { kind: "empty", text: "—" });
+    }
+
     for (const f of section.fields) {
-      if (f.heading) blocks.push({ kind: "h2", text: `${f.label} :`, index: ++h2, section: si });
+      if (f.kind === "role") continue;
+      if (f.heading) blocks.push({ kind: "subheading", text: `${f.label} :` });
       const v = content[f.key];
       if (f.kind === "text") {
         const paras = String(v ?? "")
@@ -47,31 +60,31 @@ export function buildDocModel(meta: Meta, type: DocType, rawContent: Content): D
   });
 
   const info = [
-    { label: "Thème", value: meta.theme },
-    { label: "Bloc", value: meta.bloc },
-    { label: "Auteur", value: meta.auteur },
-    { label: "Groupe", value: meta.groupe },
-    { label: "Date", value: formatDateFr(meta.date) },
-  ].filter((i) => i.value.trim() !== "");
+    meta.numero && `Prosit n° ${meta.numero}`,
+    meta.bloc,
+    meta.auteur && (meta.groupe ? `${meta.auteur} (${meta.groupe})` : meta.auteur),
+    !meta.auteur && meta.groupe,
+    meta.date && formatDateFr(meta.date),
+  ]
+    .filter((x): x is string => !!x && x.trim() !== "")
+    .join("  ·  ");
 
   return {
     type,
-    title: docTitle(meta, type),
-    header: [meta.nom, meta.theme].filter(Boolean).join(" — "),
+    banner: type === "aller" ? "PROSIT ALLER" : "PROSIT RETOUR",
+    title: `Boucle PBL : ${meta.theme || meta.nom || "…"}`,
     info,
     blocks,
   };
 }
 
-/** Marqueur affiché pour un élément de liste (aperçu) — calqué sur la numérotation Word. */
+/** Marqueur affiché pour un élément de liste (aperçu) — identique au .docx. */
 export function listMarker(style: ListStyle, level: number, n: number): string {
-  const bullets = ["-", "o", "▪"];
-  const numbered = (lvl: number) => (lvl === 0 ? `${n}.` : lvl === 1 ? `${String.fromCharCode(96 + ((n - 1) % 26) + 1)}.` : `${toRoman(n).toLowerCase()}.`);
-  if (style === "bullet") return bullets[level] ?? "-";
-  if (style === "numbered") return numbered(level);
-  // bullet-numbered
-  if (level === 0) return "-";
-  return level === 1 ? `${n}.` : `${String.fromCharCode(96 + ((n - 1) % 26) + 1)}.`;
+  const letter = String.fromCharCode(96 + ((n - 1) % 26) + 1);
+  if (style === "bullet") return "■";
+  if (style === "numbered") return level === 0 ? `${n}.` : level === 1 ? `${letter}.` : `${toRoman(n).toLowerCase()}.`;
+  if (level === 0) return "■";
+  return level === 1 ? `${n}.` : `${letter}.`;
 }
 
 export function toRoman(n: number): string {
