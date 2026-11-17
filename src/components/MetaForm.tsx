@@ -11,6 +11,7 @@ const FIELDS: { key: keyof Meta; label: string; type?: string; placeholder: stri
   { key: "bloc", label: "Bloc / projet", placeholder: "SI et Sécurité 2026-27", span: "sm:col-span-2" },
   { key: "auteur", label: "Auteur (nom, prénom)", placeholder: "Nom Prénom", span: "sm:col-span-2" },
   { key: "groupe", label: "Groupe / classe", placeholder: "FISA A3", span: "sm:col-span-2" },
+  { key: "lien", label: "Lien vers le sujet (non exporté)", type: "url", placeholder: "https://…", span: "sm:col-span-4" },
 ];
 
 interface Props {

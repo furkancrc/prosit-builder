@@ -60,10 +60,24 @@ function migrate(db: Database.Database) {
       PRAGMA user_version = 1;
     `);
   }
+  if (version < 2) {
+    db.exec(`
+      ALTER TABLE prosits ADD COLUMN lien TEXT NOT NULL DEFAULT '';
+      PRAGMA user_version = 2;
+    `);
+  }
 }
+
+// Réinitialisé à chaque (re)chargement du module : en dev, la connexion mise en cache
+// sur globalThis survit au rechargement à chaud, mais les nouvelles migrations doivent s'appliquer.
+let migrated = false;
 
 export function db(): Database.Database {
   if (!g.__prositDb) g.__prositDb = open();
+  if (!migrated) {
+    migrate(g.__prositDb);
+    migrated = true;
+  }
   return g.__prositDb;
 }
 
@@ -103,7 +117,7 @@ export interface DocumentRow {
   updatedAt: string;
 }
 
-const PROSIT_COLS = "id, nom, theme, numero, bloc, date, auteur, groupe, created_at AS createdAt, updated_at AS updatedAt";
+const PROSIT_COLS = "id, nom, theme, numero, bloc, date, auteur, groupe, lien, created_at AS createdAt, updated_at AS updatedAt";
 
 export function listProsits(): PrositRow[] {
   return db().prepare(`SELECT ${PROSIT_COLS} FROM prosits ORDER BY updated_at DESC`).all() as PrositRow[];
@@ -148,11 +162,12 @@ export function createProsit(meta: Partial<Meta>, contents?: Partial<Record<DocT
     date: meta.date ?? t.slice(0, 10),
     auteur: meta.auteur ?? s.auteur,
     groupe: meta.groupe ?? s.groupe,
+    lien: meta.lien ?? "",
   };
   const tx = db().transaction(() => {
     db()
       .prepare(
-        "INSERT INTO prosits (id, nom, theme, numero, bloc, date, auteur, groupe, created_at, updated_at) VALUES (@id, @nom, @theme, @numero, @bloc, @date, @auteur, @groupe, @t, @t)",
+        "INSERT INTO prosits (id, nom, theme, numero, bloc, date, auteur, groupe, lien, created_at, updated_at) VALUES (@id, @nom, @theme, @numero, @bloc, @date, @auteur, @groupe, @lien, @t, @t)",
       )
       .run({ id, ...m, t });
     for (const type of ["aller", "retour"] as const) {
@@ -185,7 +200,7 @@ export function duplicateProsit(id: string): string | undefined {
   if (!p) return undefined;
   const docs = getDocuments(id);
   const newId = createProsit(
-    { nom: `${p.nom} (copie)`, theme: p.theme, numero: p.numero, bloc: p.bloc, date: p.date, auteur: p.auteur, groupe: p.groupe },
+    { nom: `${p.nom} (copie)`, theme: p.theme, numero: p.numero, bloc: p.bloc, date: p.date, auteur: p.auteur, groupe: p.groupe, lien: p.lien },
     Object.fromEntries(docs.map((d) => [d.type, d.content])),
   );
   for (const d of docs) {

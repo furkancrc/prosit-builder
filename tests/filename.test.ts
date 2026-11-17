@@ -11,6 +11,7 @@ const meta: Meta = {
   date: "2026-11-17",
   auteur: "Çiçek Élodie",
   groupe: "FISA A3",
+  lien: "",
 };
 
 describe("nom de fichier", () => {

@@ -48,7 +48,7 @@ export function SettingsForm({ initial }: { initial: Settings }) {
 
   const example = buildFilename(
     s.filenameTemplate,
-    { nom: "Prosit aller SI - 1", theme: "SI : Administration et Sécurité", numero: "1", bloc: s.bloc, date: "2026-11-17", auteur: s.auteur, groupe: s.groupe },
+    { nom: "Prosit aller SI - 1", theme: "SI : Administration et Sécurité", numero: "1", bloc: s.bloc, date: "2026-11-17", auteur: s.auteur, groupe: s.groupe, lien: "" },
     "aller",
   );
 

@@ -29,6 +29,9 @@ export const MetaSchema = z.object({
   date: z.string().trim().max(40),
   auteur: short,
   groupe: short,
+  /** Lien vers le sujet du prosit (Moodle, Teams…). Non exporté dans le document. */
+  // Pas de validation stricte : la saisie est enregistrée au fil de la frappe.
+  lien: z.string().trim().max(500),
 });
 export type Meta = z.infer<typeof MetaSchema>;
 export const MetaPatchSchema = MetaSchema.partial();

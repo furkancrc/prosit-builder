@@ -13,6 +13,7 @@ const meta: Meta = {
   date: "2026-11-17",
   auteur: "Dupont Jean",
   groupe: "FISA A3",
+  lien: "",
 };
 
 const li = (text: string, level = 0) => ({ id: Math.random().toString(36).slice(2), text, level });
