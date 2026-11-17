@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import type { Content, DocType, ListItem, MetaPatch } from "../schema";
 import { MAX_LEVEL, normalizeList } from "../schema";
-import { allFields, emptyContent, getTemplate, type FieldDef } from "../templates";
+import { allFields, emptyContent, getTemplate, type FieldDef, type SectionDef } from "../templates";
 
 interface RawPara {
   style: string;
@@ -50,9 +50,10 @@ export function parseParagraphs(documentXml: string): RawPara[] {
 }
 
 const isTitle = (s: string) => /^(titre|title)$/i.test(s);
-const isH1 = (s: string) => /^(titre1|heading1)$/i.test(s);
-const isH2 = (s: string) => /^(titre2|heading2)$/i.test(s);
+const isHeadingStyle = (s: string) => /^(titre|heading)[12]$/i.test(s);
 const isListStyle = (s: string) => /^(paragraphedeliste|listparagraph)$/i.test(s);
+const BULLET = /^\s*[■▪•●◦□‣–]\s*/;
+const ROMAN_PREFIX = /^\s*[IVXLC]+\s*[.)]?\s+(?=\S)/;
 
 export interface ImportResult {
   type: DocType | null;
@@ -64,67 +65,102 @@ export interface ImportResult {
 let idSeq = 0;
 const newId = () => `imp${Date.now().toString(36)}${(idSeq++).toString(36)}`;
 
-/** Analyse le XML d'un prosit et pré-remplit les champs du template correspondant. */
+type Target = { section: SectionDef; field?: FieldDef };
+
+/**
+ * Analyse le XML d'un prosit et pré-remplit les champs du template.
+ * Gère l'ancien format (styles Titre 1 / Titre 2) et le format « Boucle PBL »
+ * (titres de section dans des tableaux, puces « ■ » en texte).
+ */
 export function importFromXml(documentXml: string, forceType?: DocType): ImportResult {
   const paras = parseParagraphs(documentXml);
   const meta: MetaPatch = {};
   let type: DocType | null = forceType ?? null;
 
-  const titlePara = paras.find((p) => isTitle(p.style) && p.text);
-  if (titlePara) {
-    const t = normKey(titlePara.text);
-    if (!type) type = t.includes("retour") ? "retour" : t.includes("aller") ? "aller" : null;
-    const num = /n\s*[°º]\s*(\w+)/i.exec(titlePara.text)?.[1] ?? /(\d+)\s*$/.exec(titlePara.text)?.[1];
-    if (num) meta.numero = num;
+  // Type, numéro et thème
+  for (const p of paras.slice(0, 12)) {
+    const k = normKey(p.text);
+    if (!type && /^prosit(aller|retour)/.test(k)) type = k.includes("retour") ? "retour" : "aller";
+    if (isTitle(p.style) && p.text) {
+      const num = /n\s*[°º]\s*(\w+)/i.exec(p.text)?.[1] ?? /(\d+)\s*$/.exec(p.text)?.[1];
+      if (num) meta.numero = num;
+    }
+    const infoNum = /^prosit\s+n\s*[°º]\s*(\w+)/i.exec(p.text);
+    if (infoNum && !meta.numero) meta.numero = infoNum[1];
+    const pbl = /^boucle\s+pbl\s*:\s*(.+)$/i.exec(p.text);
+    if (pbl) meta.theme = pbl[1].trim();
   }
 
   const tpl = getTemplate(type ?? "aller");
-  const fields = allFields(tpl);
-  const byH2 = new Map<string, FieldDef>();
-  const byH1 = new Map<string, FieldDef>();
+  const headings = new Map<string, Target>();
   for (const s of tpl.sections) {
+    const solo = s.fields.length === 1 ? s.fields[0] : undefined;
+    for (const k of [s.title, ...(s.aliases ?? [])]) headings.set(normKey(k), { section: s, field: solo });
     for (const f of s.fields) {
-      for (const k of [f.label, ...(f.aliases ?? [])]) byH2.set(normKey(k), f);
+      if (f.kind === "role") continue;
+      for (const k of [f.label, ...(f.aliases ?? [])]) if (!headings.has(normKey(k))) headings.set(normKey(k), { section: s, field: f });
     }
-    const solo = s.fields.length === 1 && !s.fields[0].heading ? s.fields[0] : undefined;
-    if (solo) for (const k of [s.title, ...(s.aliases ?? [])]) byH1.set(normKey(k), solo);
   }
-  const matchHeading = (text: string, map: Map<string, FieldDef>) => {
-    const k = normKey(text);
+  const lookup = (text: string, fuzzy: boolean): Target | undefined => {
+    const k = normKey(text.replace(ROMAN_PREFIX, "").replace(/:\s*$/, ""));
     if (!k) return undefined;
-    return map.get(k) ?? [...map.entries()].find(([key]) => k.startsWith(key) || (key.length > 4 && k.includes(key)))?.[1];
+    const exact = headings.get(k);
+    if (exact || !fuzzy) return exact;
+    return [...headings.entries()].find(([key]) => key.length > 4 && (k.startsWith(key) || key.startsWith(k)))?.[1];
   };
 
   const content = emptyContent(tpl);
   const lists = new Map<string, { text: string; rawLevel: number }[]>();
   const texts = new Map<string, string[]>();
   const unmatched: string[] = [];
-  let current: FieldDef | undefined;
+  let current: Target | undefined;
 
   for (const p of paras) {
-    if (isTitle(p.style)) continue;
-    if (isH1(p.style)) {
-      current = matchHeading(p.text, byH1);
+    if (isTitle(p.style) || !p.text) continue;
+    if (/^prosit(aller|retour)$/.test(normKey(p.text)) || /^boucle\s+pbl\s*:/i.test(p.text)) continue;
+
+    // Titres : style Word, ou paragraphe court reconnu (format tableau)
+    if (isHeadingStyle(p.style)) {
+      const t = lookup(p.text, true);
+      if (t) current = t;
+      else {
+        // un Titre 1 inconnu (ex. « Analyser le besoin ») ouvre une zone neutre
+        if (/2$/.test(p.style)) unmatched.push(p.text);
+        current = undefined;
+      }
       continue;
     }
-    if (isH2(p.style)) {
-      current = matchHeading(p.text, byH2);
-      if (!current && p.text) unmatched.push(p.text);
+    if (p.text.length <= 60 && !BULLET.test(p.text)) {
+      const t = lookup(p.text, false);
+      if (t) {
+        current = t;
+        continue;
+      }
+    }
+    if (!current) continue;
+
+    // Rôles : « Animateur : Alice »
+    if (!current.field || current.field.kind === "role") {
+      const m = /^(.+?)\s*:\s*(.*)$/.exec(p.text.replace(BULLET, ""));
+      const role = m && current.section.fields.find((f) => f.kind === "role" && [f.label, ...(f.aliases ?? [])].some((l) => normKey(l) === normKey(m[1])));
+      if (role && m) content[role.key] = m[2].trim();
       continue;
     }
-    if (!current || !p.text) continue;
-    if (current.kind === "text") {
-      texts.set(current.key, [...(texts.get(current.key) ?? []), p.text]);
-    } else {
-      const manual = /^\s*\d+\s*[.)](?:\s+|(?=[^\d\s]))/.exec(p.text) ?? /^\s*[a-z]\s*[.)]\s+/i.exec(p.text);
-      const isItem = p.numbered || isListStyle(p.style) || !!manual;
-      const text = manual && !p.numbered ? p.text.slice(manual[0].length).trim() : p.text;
-      const rawLevel = p.numbered ? p.ilvl : manual ? 0 : 0;
-      if (isItem || text) lists.set(current.key, [...(lists.get(current.key) ?? []), { text, rawLevel }]);
+
+    const field = current.field;
+    if (field.kind === "text") {
+      texts.set(field.key, [...(texts.get(field.key) ?? []), p.text.replace(BULLET, "")]);
+    } else if (field.kind === "list") {
+      const bullet = BULLET.exec(p.text);
+      const manual = bullet ? null : (/^\s*\d+\s*[.)](?:\s+|(?=[^\d\s]))/.exec(p.text) ?? /^\s*[a-z]\s*[.)]\s+/i.exec(p.text));
+      const prefix = bullet ?? (p.numbered ? null : manual);
+      const text = prefix ? p.text.slice(prefix[0].length).trim() : p.text;
+      const rawLevel = p.numbered ? p.ilvl : 0;
+      if (text) lists.set(field.key, [...(lists.get(field.key) ?? []), { text, rawLevel }]);
     }
   }
 
-  for (const f of fields) {
+  for (const f of allFields(tpl)) {
     if (f.kind === "text" && texts.has(f.key)) content[f.key] = texts.get(f.key)!.join("\n");
     if (f.kind === "list" && lists.has(f.key)) {
       const raw = lists.get(f.key)!;
