@@ -2,22 +2,45 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentRow, PrositRow } from "@/lib/db";
 import { api } from "@/lib/client-api";
 import { buildFilename } from "@/lib/filename";
 import { effectiveMeta } from "@/lib/meta";
+import { channelName, type PresentationMessage } from "@/lib/presentation";
 import type { Content, DocType, ListItem, Meta, MetaPatch, Settings } from "@/lib/schema";
-import { coerceContent, getTemplate, sectionNumbers, type FieldDef } from "@/lib/templates";
+import { coerceContent, emptyContent, getTemplate, sectionNumbers, type FieldDef } from "@/lib/templates";
 import { toRoman } from "@/lib/doc-model";
+import { toggleColorMode } from "@/lib/theme-client";
 import { DownloadDialog } from "./DownloadDialog";
+import { HelpDialog, SECTION_KEYS } from "./HelpDialog";
 import { ListEditor } from "./ListEditor";
 import { MetaForm } from "./MetaForm";
 import { Preview } from "./Preview";
+import { useHistory } from "./useHistory";
 import { SaveIndicator, useSaver } from "./useSaver";
-import { IconBack, IconChevron, IconDownload, IconUpload } from "./icons";
+import {
+  IconBack,
+  IconChevron,
+  IconDownload,
+  IconHelp,
+  IconLink,
+  IconNext,
+  IconPresent,
+  IconPrev,
+  IconRedo,
+  IconTrash,
+  IconUndo,
+  IconUpload,
+} from "./icons";
 
-const META_KEYS: (keyof Meta)[] = ["nom", "theme", "numero", "bloc", "date", "auteur", "groupe"];
+const META_KEYS: (keyof Meta)[] = ["nom", "theme", "numero", "bloc", "date", "auteur", "groupe", "lien"];
+
+type DocState = { id: string; content: Content; overrides: MetaPatch };
+interface EditorState {
+  base: Meta;
+  docs: Record<DocType, DocState>;
+}
 
 interface Props {
   prosit: PrositRow;
@@ -25,22 +48,32 @@ interface Props {
   settings: Settings;
 }
 
+/** Contenu non vide ? (pour savoir si une rubrique est remplie) */
+function filled(v: Content[string] | undefined): boolean {
+  if (typeof v === "string") return v.trim() !== "";
+  return Array.isArray(v) && v.some((i) => i.text.trim() !== "");
+}
+
 export function Editor({ prosit: initialProsit, documents, settings }: Props) {
   const router = useRouter();
   const search = useSearchParams();
+  const prositId = initialProsit.id;
   const [tab, setTab] = useState<DocType>(search.get("tab") === "retour" ? "retour" : "aller");
   const [mobileView, setMobileView] = useState<"form" | "preview">("form");
   const [metaOpen, setMetaOpen] = useState(true);
   const [download, setDownload] = useState<"docx" | "pdf" | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [active, setActive] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const sectionRefs = useRef<(HTMLElement | null)[]>([]);
 
-  const [base, setBase] = useState<Meta>(() => Object.fromEntries(META_KEYS.map((k) => [k, initialProsit[k]])) as Meta);
-  const [docs, setDocs] = useState(() => {
-    const m = {} as Record<DocType, { id: string; content: Content; overrides: MetaPatch }>;
-    for (const d of documents) m[d.type] = { id: d.id, content: coerceContent(getTemplate(d.type), d.content), overrides: d.metaOverrides };
-    return m;
+  const history = useHistory<EditorState>(() => {
+    const docs = {} as Record<DocType, DocState>;
+    for (const d of documents) docs[d.type] = { id: d.id, content: coerceContent(getTemplate(d.type), d.content), overrides: d.metaOverrides };
+    return { base: Object.fromEntries(META_KEYS.map((k) => [k, initialProsit[k] ?? ""])) as Meta, docs };
   });
+  const { base, docs } = history.state;
   const { schedule, flush, status, error } = useSaver();
 
   const doc = docs[tab];
@@ -49,43 +82,194 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
   const meta = useMemo(() => effectiveMeta(base, tab, tab === "retour" ? doc.overrides : null), [base, tab, doc.overrides]);
   const filename = buildFilename(settings.filenameTemplate, meta, tab);
 
-  const switchTab = (t: DocType) => {
-    setTab(t);
-    router.replace(`?tab=${t}`, { scroll: false });
+  /** Entrées de navigation : en-tête puis chaque section du template. */
+  const navItems = useMemo(
+    () => [
+      { label: "En-tête", num: undefined as string | undefined, done: !!(meta.nom && meta.theme) },
+      ...template.sections.map((s, i) => ({
+        label: s.title,
+        num: sectionNums[i] ? toRoman(sectionNums[i]!) : undefined,
+        done: s.fields.some((f) => filled(doc.content[f.key])),
+      })),
+    ],
+    [template, sectionNums, doc.content, meta.nom, meta.theme],
+  );
+
+  // ---------- persistance (diff entre deux états) ----------
+
+  const persist = useCallback(
+    (next: EditorState, prev: EditorState) => {
+      if (next.base !== prev.base) {
+        const body = JSON.stringify(next.base);
+        schedule("prosit", () => api(`/api/prosits/${prositId}`, { method: "PATCH", body }));
+      }
+      for (const type of ["aller", "retour"] as const) {
+        const a = next.docs[type];
+        const b = prev.docs[type];
+        if (a.content !== b.content) {
+          const body = JSON.stringify({ content: a.content });
+          schedule(`content:${a.id}`, () => api(`/api/documents/${a.id}`, { method: "PATCH", body }));
+        }
+        if (a.overrides !== b.overrides) {
+          const body = JSON.stringify({ metaOverrides: a.overrides });
+          schedule(`meta:${a.id}`, () => api(`/api/documents/${a.id}`, { method: "PATCH", body }));
+        }
+      }
+    },
+    [prositId, schedule],
+  );
+
+  const update = (fn: (s: EditorState) => EditorState, group?: string) => {
+    const prev = history.get();
+    const next = fn(prev);
+    history.commit(next, group);
+    persist(next, prev);
   };
 
-  // ---------- mises à jour + sauvegarde automatique ----------
+  const undo = useCallback(() => {
+    const prev = history.get();
+    const next = history.undo();
+    if (next) persist(next, prev);
+  }, [history, persist]);
 
-  const saveDoc = (type: DocType, next: { content?: Content; overrides?: MetaPatch }) => {
-    const id = docs[type].id;
-    setDocs((d) => ({ ...d, [type]: { ...d[type], ...(next.content && { content: next.content }), ...(next.overrides && { overrides: next.overrides }) } }));
-    if (next.content) {
-      const content = next.content;
-      schedule(`content:${id}`, () => api(`/api/documents/${id}`, { method: "PATCH", body: JSON.stringify({ content }) }));
-    }
-    if (next.overrides) {
-      const metaOverrides = next.overrides;
-      schedule(`meta:${id}`, () => api(`/api/documents/${id}`, { method: "PATCH", body: JSON.stringify({ metaOverrides }) }));
-    }
-  };
+  const redo = useCallback(() => {
+    const prev = history.get();
+    const next = history.redo();
+    if (next) persist(next, prev);
+  }, [history, persist]);
 
-  const setField = (key: string, value: Content[string]) => saveDoc(tab, { content: { ...doc.content, [key]: value } });
+  const setDoc = (type: DocType, patch: Partial<DocState>, group?: string) =>
+    update((s) => ({ ...s, docs: { ...s.docs, [type]: { ...s.docs[type], ...patch } } }), group);
+
+  const setField = (key: string, value: Content[string]) => setDoc(tab, { content: { ...doc.content, [key]: value } }, `${tab}:${key}`);
 
   const setMeta = (key: keyof Meta, value: string) => {
-    if (tab === "aller") {
-      const next = { ...base, [key]: value };
-      setBase(next);
-      schedule("prosit", () => api(`/api/prosits/${initialProsit.id}`, { method: "PATCH", body: JSON.stringify(next) }));
-    } else {
-      saveDoc("retour", { overrides: { ...doc.overrides, [key]: value } });
-    }
+    if (tab === "aller") update((s) => ({ ...s, base: { ...s.base, [key]: value } }), `meta:${key}`);
+    else setDoc("retour", { overrides: { ...doc.overrides, [key]: value } }, `override:${key}`);
   };
 
   const resetMeta = (key: keyof Meta) => {
     const next = { ...doc.overrides };
     delete next[key];
-    saveDoc("retour", { overrides: next });
+    setDoc("retour", { overrides: next });
   };
+
+  const resetProsit = () => {
+    if (!confirm(`Vider toutes les rubriques du prosit ${tab} ?\nL’en-tête est conservé. Tu peux annuler avec Ctrl+Z.`)) return;
+    setDoc(tab, { content: emptyContent(template) });
+    setNotice(`Prosit ${tab} réinitialisé. Ctrl+Z pour annuler.`);
+  };
+
+  const switchTab = (t: DocType) => {
+    setTab(t);
+    setActive(0);
+    router.replace(`?tab=${t}`, { scroll: false });
+  };
+
+  // ---------- navigation entre rubriques ----------
+
+  const goTo = useCallback(
+    (i: number) => {
+      const idx = Math.max(0, Math.min(navItems.length - 1, i));
+      setMobileView("form");
+      if (idx === 0) setMetaOpen(true);
+      setActive(idx);
+      // setTimeout (et non requestAnimationFrame) : laisse React afficher l'en-tête déplié avant de viser le champ
+      setTimeout(() => {
+        const el = sectionRefs.current[idx];
+        if (!el) return;
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        el.querySelector<HTMLElement>("input, textarea")?.focus({ preventScroll: true });
+      }, 0);
+    },
+    [navItems.length],
+  );
+
+  // rubrique visible à l'écran → active
+  useEffect(() => {
+    const els = sectionRefs.current.filter(Boolean) as HTMLElement[];
+    const obs = new IntersectionObserver(
+      (entries) => {
+        // Si l'utilisateur écrit dans une rubrique, c'est elle qui reste active (suivie via onFocusCapture).
+        if (document.activeElement?.closest("[data-nav]")) return;
+        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        const i = visible ? Number((visible.target as HTMLElement).dataset.nav) : NaN;
+        if (!Number.isNaN(i)) setActive(i);
+      },
+      { rootMargin: "-160px 0px -55% 0px" },
+    );
+    els.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [tab, navItems.length]);
+
+  // ---------- présentation (fenêtre séparée) ----------
+
+  const channel = useRef<BroadcastChannel | null>(null);
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel(channelName(prositId));
+    channel.current = ch;
+    return () => {
+      ch.close();
+      channel.current = null;
+    };
+  }, [prositId]);
+
+  const presentationState: PresentationMessage = useMemo(() => ({ kind: "state", tab, meta, content: doc.content, active }), [tab, meta, doc.content, active]);
+  useEffect(() => {
+    channel.current?.postMessage(presentationState);
+  }, [presentationState]);
+  useEffect(() => {
+    const ch = channel.current;
+    if (!ch) return;
+    const onMsg = (e: MessageEvent<PresentationMessage>) => {
+      if (e.data?.kind === "hello") ch.postMessage(presentationState);
+    };
+    ch.addEventListener("message", onMsg);
+    return () => ch.removeEventListener("message", onMsg);
+  }, [presentationState]);
+
+  const openPresentation = () => {
+    window.open(`/prosits/${prositId}/presentation?tab=${tab}`, `presentation-${prositId}`, "popup,width=1280,height=800");
+  };
+
+  // ---------- raccourcis clavier ----------
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]") && e.key !== "F1") return;
+      const ctrl = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      if (e.key === "F1") {
+        e.preventDefault();
+        setHelpOpen((o) => !o);
+      } else if (ctrl && !e.altKey && k === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (ctrl && !e.altKey && k === "y") {
+        e.preventDefault();
+        redo();
+      } else if (ctrl && !e.altKey && k === "s") {
+        e.preventDefault();
+        setDownload("docx");
+      } else if (ctrl && e.key === "Enter") {
+        e.preventDefault();
+        goTo(active + (e.shiftKey ? -1 : 1));
+      } else if (ctrl && e.altKey && k === "l") {
+        e.preventDefault();
+        void toggleColorMode();
+      } else if (e.altKey && e.shiftKey && !ctrl) {
+        const idx = SECTION_KEYS.indexOf(e.key.toUpperCase());
+        if (idx >= 0 && idx < navItems.length) {
+          e.preventDefault();
+          goTo(idx);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, goTo, navItems.length, undo, redo]);
 
   // ---------- import d'un .docx ----------
 
@@ -96,22 +280,19 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
       fd.append("file", file);
       fd.append("type", tab);
       const r = await api<{ content: Content; meta: MetaPatch; unmatched: string[] }>("/api/import", { method: "POST", body: fd });
-      const hasContent = Object.values(doc.content).some((v) => (typeof v === "string" ? v.trim() : v.length));
+      const hasContent = Object.values(doc.content).some((v) => filled(v));
       if (hasContent && !confirm(`Remplacer le contenu actuel du prosit ${tab} par celui de « ${file.name} » ?`)) return;
-      saveDoc(tab, { content: coerceContent(template, r.content) });
-      if (tab === "aller") {
-        const fill: MetaPatch = {};
-        if (r.meta.numero && !meta.numero) fill.numero = r.meta.numero;
-        if (r.meta.theme && !meta.theme) fill.theme = r.meta.theme;
-        if (Object.keys(fill).length) {
-          const next = { ...base, ...fill };
-          setBase(next);
-          schedule("prosit", () => api(`/api/prosits/${initialProsit.id}`, { method: "PATCH", body: JSON.stringify(next) }));
+      update((s) => {
+        const next: EditorState = { ...s, docs: { ...s.docs, [tab]: { ...s.docs[tab], content: coerceContent(template, r.content) } } };
+        if (tab === "aller") {
+          const fill: MetaPatch = {};
+          if (r.meta.numero && !s.base.numero) fill.numero = r.meta.numero;
+          if (r.meta.theme && !s.base.theme) fill.theme = r.meta.theme;
+          if (Object.keys(fill).length) next.base = { ...s.base, ...fill };
         }
-      }
-      setNotice(
-        `Import de « ${file.name} » terminé.` + (r.unmatched.length ? ` Rubriques non reconnues : ${r.unmatched.join(", ")}.` : ""),
-      );
+        return next;
+      });
+      setNotice(`Import de « ${file.name} » terminé (Ctrl+Z pour annuler).` + (r.unmatched.length ? ` Rubriques non reconnues : ${r.unmatched.join(", ")}.` : ""));
     } catch (e) {
       setNotice(`Import impossible : ${(e as Error).message}`);
     }
@@ -119,10 +300,31 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
 
   // ---------- rendu ----------
 
+  const lienOk = /^https?:\/\//i.test(base.lien);
+  const navButton = (i: number, compact = false) => {
+    const n = navItems[i];
+    return (
+      <button
+        key={i}
+        onClick={() => goTo(i)}
+        aria-current={active === i ? "step" : undefined}
+        className={
+          compact
+            ? `shrink-0 rounded-sm border px-2.5 py-1 text-xs whitespace-nowrap ${active === i ? "border-ink bg-ink text-bg" : "border-line text-muted"}`
+            : `flex w-full items-center gap-2 rounded-sm px-2.5 py-1.5 text-left text-sm ${active === i ? "bg-accent/25 font-semibold text-ink" : "text-muted hover:bg-surface-2 hover:text-ink"}`
+        }
+      >
+        {!compact && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${n.done ? "bg-emerald-500" : "bg-line"}`} />}
+        {n.num && <span className={compact ? "" : "w-7 shrink-0 font-mono text-xs"}>{n.num}</span>}
+        <span className="truncate">{n.label}</span>
+      </button>
+    );
+  };
+
   return (
-    <main className="mx-auto max-w-[1600px] px-3 pb-16 sm:px-4">
+    <main className="mx-auto max-w-[1700px] px-3 pb-16 sm:px-4">
       {/* Barre d'outils */}
-      <div className="z-20 -mx-3 sm:sticky sm:top-14 mb-4 border-b border-line bg-bg/95 px-3 py-3 backdrop-blur sm:-mx-4 sm:px-4">
+      <div className="z-20 -mx-3 mb-4 border-b border-line bg-bg/95 px-3 py-3 backdrop-blur sm:sticky sm:top-14 sm:-mx-4 sm:px-4">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Link href="/" className="btn btn-ghost btn-icon" aria-label="Retour à la liste" title="Retour à la liste">
             <IconBack />
@@ -132,11 +334,30 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
             <p className="truncate text-xs text-muted">{meta.theme || "Thème non renseigné"}</p>
           </div>
           <SaveIndicator status={status} error={error} />
+          <div className="flex items-center gap-0.5">
+            <button className="btn btn-ghost btn-icon" onClick={undo} disabled={!history.canUndo} title="Annuler (Ctrl+Z)" aria-label="Annuler">
+              <IconUndo />
+            </button>
+            <button className="btn btn-ghost btn-icon" onClick={redo} disabled={!history.canRedo} title="Rétablir (Ctrl+Maj+Z)" aria-label="Rétablir">
+              <IconRedo />
+            </button>
+            {lienOk && (
+              <a className="btn btn-ghost btn-icon" href={base.lien} target="_blank" rel="noopener noreferrer" title="Ouvrir le sujet" aria-label="Ouvrir le sujet">
+                <IconLink />
+              </a>
+            )}
+            <button className="btn btn-ghost btn-icon" onClick={() => setHelpOpen(true)} title="Aide et raccourcis (F1)" aria-label="Aide">
+              <IconHelp />
+            </button>
+          </div>
           <div className="flex w-full gap-2 sm:w-auto">
+            <button className="btn" onClick={openPresentation} title="Ouvrir la vue à projeter">
+              <IconPresent /> <span className="hidden md:inline">Présentation</span>
+            </button>
             <button className="btn" onClick={() => fileRef.current?.click()} title="Pré-remplir depuis un .docx existant">
               <IconUpload /> <span className="hidden md:inline">Importer</span>
             </button>
-            <button className="btn btn-primary flex-1 justify-center sm:flex-none" onClick={() => setDownload("docx")}>
+            <button className="btn btn-primary flex-1 justify-center sm:flex-none" onClick={() => setDownload("docx")} title="Ctrl+S">
               <IconDownload /> Word <span className="hidden lg:inline">(.docx)</span>
             </button>
             <button className="btn btn-primary flex-1 justify-center sm:flex-none" onClick={() => setDownload("pdf")}>
@@ -177,6 +398,16 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
             ))}
           </div>
         </div>
+        {/* Navigation compacte (écrans < xl) */}
+        <nav className="-mx-1 mt-2 flex items-center gap-1 overflow-x-auto px-1 pb-0.5 xl:hidden" aria-label="Rubriques">
+          <button className="btn btn-ghost btn-icon shrink-0" onClick={() => goTo(active - 1)} disabled={active === 0} aria-label="Rubrique précédente">
+            <IconPrev width={14} height={14} />
+          </button>
+          {navItems.map((_, i) => navButton(i, true))}
+          <button className="btn btn-ghost btn-icon shrink-0" onClick={() => goTo(active + 1)} disabled={active === navItems.length - 1} aria-label="Rubrique suivante">
+            <IconNext width={14} height={14} />
+          </button>
+        </nav>
       </div>
 
       {notice && (
@@ -186,10 +417,35 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
         </p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-[13rem_minmax(0,1fr)_minmax(0,1fr)]">
+        {/* Barre latérale (xl) */}
+        <aside className="hidden xl:block">
+          <nav className="sticky top-[10.5rem] space-y-0.5" aria-label="Rubriques">
+            {navItems.map((_, i) => navButton(i))}
+            <div className="flex gap-1 pt-3">
+              <button className="btn flex-1 justify-center text-xs" onClick={() => goTo(active - 1)} disabled={active === 0} title="Ctrl+Maj+Entrée">
+                <IconPrev width={14} height={14} /> Préc.
+              </button>
+              <button className="btn flex-1 justify-center text-xs" onClick={() => goTo(active + 1)} disabled={active === navItems.length - 1} title="Ctrl+Entrée">
+                Suiv. <IconNext width={14} height={14} />
+              </button>
+            </div>
+            <button className="btn btn-ghost mt-4 w-full justify-center text-xs text-danger" onClick={resetProsit}>
+              <IconTrash width={14} height={14} /> Réinitialiser le prosit
+            </button>
+          </nav>
+        </aside>
+
         {/* Formulaire */}
         <div className={`space-y-4 ${mobileView === "preview" ? "hidden lg:block" : ""}`}>
-          <section className="rounded-sm border border-line bg-surface">
+          <section
+            ref={(el) => {
+              sectionRefs.current[0] = el;
+            }}
+            data-nav={0}
+            onFocusCapture={() => setActive(0)}
+            className={`scroll-mt-48 rounded-sm border bg-surface ${active === 0 ? "border-ink/40" : "border-line"}`}
+          >
             <button className="flex w-full items-center gap-2 px-4 py-3 text-left" onClick={() => setMetaOpen((o) => !o)} aria-expanded={metaOpen}>
               <span className="title-cesi text-sm">En-tête du prosit</span>
               <span className="truncate text-xs text-muted">{!metaOpen && [meta.numero && `n° ${meta.numero}`, meta.auteur, meta.groupe].filter(Boolean).join(" · ")}</span>
@@ -211,8 +467,17 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
           {template.sections.map((s, si) => {
             const n = sectionNums[si];
             const isRoles = s.fields.every((f) => f.kind === "role");
+            const navIdx = si + 1;
             return (
-              <section key={s.title} className="rounded-sm border border-line bg-surface px-4 py-4">
+              <section
+                key={`${tab}:${s.title}`}
+                ref={(el) => {
+                  sectionRefs.current[navIdx] = el;
+                }}
+                data-nav={navIdx}
+                onFocusCapture={() => setActive(navIdx)}
+                className={`scroll-mt-48 rounded-sm border bg-surface px-4 py-4 transition-colors ${active === navIdx ? "border-ink/40" : "border-line"}`}
+              >
                 <h2 className="title-cesi mb-3 text-base">
                   {n && <span className="mr-2 text-muted">{toRoman(n)}</span>}
                   <span className="underline-accent">{s.title}</span>
@@ -225,11 +490,17 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
               </section>
             );
           })}
+
+          <div className="flex gap-2 xl:hidden">
+            <button className="btn btn-ghost flex-1 justify-center text-xs text-danger" onClick={resetProsit}>
+              <IconTrash width={14} height={14} /> Réinitialiser le prosit {tab}
+            </button>
+          </div>
         </div>
 
         {/* Aperçu */}
         <div className={`${mobileView === "form" ? "hidden lg:block" : ""}`}>
-          <div className="lg:sticky lg:top-[9.5rem] lg:max-h-[calc(100dvh-10.5rem)] lg:overflow-auto">
+          <div className="lg:sticky lg:top-[11.5rem] lg:max-h-[calc(100dvh-12.5rem)] lg:overflow-auto xl:top-[10.5rem] xl:max-h-[calc(100dvh-11.5rem)]">
             <p className="mb-2 text-xs text-muted">
               Aperçu · <code>{filename}.docx</code>
             </p>
@@ -239,15 +510,9 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
       </div>
 
       {download && (
-        <DownloadDialog
-          open
-          format={download}
-          defaultName={filename}
-          documentId={doc.id}
-          beforeDownload={flush}
-          onClose={() => setDownload(null)}
-        />
+        <DownloadDialog open format={download} defaultName={filename} documentId={doc.id} beforeDownload={flush} onClose={() => setDownload(null)} />
       )}
+      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} sections={navItems.map((n) => (n.num ? `${n.num} ${n.label}` : n.label))} />
     </main>
   );
 }

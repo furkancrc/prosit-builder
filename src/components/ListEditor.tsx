@@ -73,7 +73,7 @@ export function ListEditor({ items, style, onChange, placeholder, label }: Props
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>, i: number) => {
     const it = items[i];
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       if (it.text === "" && it.level > 0) onChange(shiftLevel(items, i, -1));
       else insertAfter(i);
