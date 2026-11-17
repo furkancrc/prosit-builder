@@ -1,6 +1,10 @@
 # Prosit Builder
 
-Web app pour rédiger les **prosits aller / retour** du CESI et les exporter en **Word (.docx)** et en **PDF** avec la mise en forme du template (titres numérotés I., II., …, rubriques « 1) Mots inconnus : », listes « - / o », pied de page « Page X sur Y »).
+Web app pour rédiger les **prosits aller / retour** du CESI et les exporter en **Word (.docx)** et en **PDF** au format « Boucle PBL » :
+- en-tête « CESI _ÉCOLE D'INGÉNIEURS » souligné de jaune ;
+- bandeau noir « PROSIT ALLER » et bloc jaune « Boucle PBL : <thème> » ;
+- section Rôles, puis rubriques I à VIII (Mots clés, Contexte, Problématique, Contraintes, Livrables, Généralisation, Pistes de solution, Plan d'action), chacune avec un repère jaune ;
+- puces ■ roses, et pied de page « PROSIT _ n ».
 
 - Liste des prosits : créer, dupliquer, renommer, supprimer, importer un .docx existant.
 - Onglets **Aller** et **Retour**. Le retour reprend les métadonnées de l'aller, et chacune peut être surchargée.
