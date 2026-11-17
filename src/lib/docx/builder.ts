@@ -43,7 +43,7 @@ function lvl(level: number, format: (typeof LevelFormat)[keyof typeof LevelForma
 }
 
 const NUMBERING: Record<ListStyle | "h1" | "h2", ILevelsOptions[]> = {
-  h1: [{ level: 0, format: LevelFormat.UPPER_ROMAN, text: "%1.", alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 714, hanging: 357 } } } }],
+  h1: [{ level: 0, format: LevelFormat.UPPER_ROMAN, text: "%1.", alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 794, hanging: 794 } } } }],
   h2: [{ level: 0, format: LevelFormat.DECIMAL, text: "%1)", alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 720, hanging: 360 } } } }],
   bullet: [lvl(0, LevelFormat.BULLET, "-"), lvl(1, LevelFormat.BULLET, "o"), lvl(2, LevelFormat.BULLET, "▪")],
   numbered: [lvl(0, LevelFormat.DECIMAL, "%1."), lvl(1, LevelFormat.LOWER_LETTER, "%2."), lvl(2, LevelFormat.LOWER_ROMAN, "%3.")],
