@@ -1,0 +1,21 @@
+import { NextResponse } from "next/server";
+import { handle, jsonError } from "@/lib/api";
+import { importDocx } from "@/lib/docx/import";
+import { DocTypeSchema } from "@/lib/schema";
+
+const MAX = 10 * 1024 * 1024;
+
+export function POST(req: Request) {
+  return handle(async () => {
+    const form = await req.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) return jsonError(400, "Aucun fichier reçu");
+    if (file.size > MAX) return jsonError(413, "Fichier trop volumineux (10 Mo max)");
+    const type = DocTypeSchema.optional().parse(form.get("type") || undefined);
+    try {
+      return NextResponse.json(await importDocx(await file.arrayBuffer(), type));
+    } catch {
+      return jsonError(400, "Impossible de lire ce fichier : est-ce bien un .docx ?");
+    }
+  });
+}
