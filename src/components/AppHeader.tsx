@@ -2,11 +2,25 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { toggleColorMode } from "@/lib/theme-client";
+import { IconMoon, IconSun } from "./icons";
 
 export function AppHeader({ canLogout }: { canLogout: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
-  if (pathname === "/login") return null;
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => setDark(root.classList.contains("dark"));
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+
+  if (pathname === "/login" || pathname.endsWith("/presentation")) return null;
 
   const nav = [
     { href: "/", label: "Prosits", active: pathname === "/" || pathname.startsWith("/prosits") },
@@ -21,7 +35,7 @@ export function AppHeader({ canLogout }: { canLogout: boolean }) {
 
   return (
     <header className="sticky top-0 z-30 bg-[#111] text-white">
-      <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-4 px-4">
+      <div className="mx-auto flex h-14 max-w-[1700px] items-center gap-4 px-4">
         <Link href="/" className="title-cesi text-lg leading-none sm:text-xl">
           <span className="border-b-[3px] border-accent pb-0.5">Prosit Builder</span>
         </Link>
@@ -35,9 +49,18 @@ export function AppHeader({ canLogout }: { canLogout: boolean }) {
               {n.label}
             </Link>
           ))}
+          <button
+            onClick={() => void toggleColorMode()}
+            className="rounded-sm p-2 text-white/70 hover:text-white"
+            title={`Passer en thème ${dark ? "clair" : "sombre"} (Ctrl+Alt+L)`}
+            aria-label={`Passer en thème ${dark ? "clair" : "sombre"}`}
+          >
+            {dark ? <IconSun /> : <IconMoon />}
+          </button>
           {canLogout && (
             <button onClick={logout} className="rounded-sm px-2.5 py-1.5 text-white/60 hover:text-white" title="Se déconnecter">
-              Déconnexion
+              <span className="hidden sm:inline">Déconnexion</span>
+              <span className="sm:hidden" aria-hidden>⏻</span>
             </button>
           )}
         </nav>
