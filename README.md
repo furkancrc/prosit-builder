@@ -10,6 +10,14 @@ Web app pour rédiger les **prosits aller / retour** du CESI et les exporter en 
 - Onglets **Aller** et **Retour**. Le retour reprend les métadonnées de l'aller, et chacune peut être surchargée.
 - Formulaire par rubrique avec des listes : glisser-déposer, sous-éléments, numérotation automatique et raccourcis clavier (Entrée, Tab, Maj+Tab, Alt+↑/↓, Retour arrière sur une ligne vide).
 - Sauvegarde automatique avec indicateur « Enregistré », et aperçu du document en direct.
+- Navigation par rubriques : barre latérale avec l'état de chaque rubrique (remplie ou non), boutons précédent / suivant.
+- **Annuler / Rétablir** (Ctrl+Z, Ctrl+Maj+Z ou Ctrl+Y), import et réinitialisation compris.
+- **Mode Présentation** : une fenêtre à projeter, mise à jour en direct, qui surligne la rubrique en cours. Plein écran possible.
+- **Raccourcis clavier** (aide avec F1) :
+  - Alt+Maj+A Z E R T Y U I O P pour aller à une rubrique ;
+  - Ctrl+Entrée pour la rubrique suivante, Ctrl+Maj+Entrée pour la précédente ;
+  - Ctrl+S pour télécharger en Word, Ctrl+Alt+L pour changer de thème.
+- Bouton thème clair/sombre dans l'en-tête, et lien vers le sujet du prosit (non exporté).
 - Téléchargement Word ou PDF, avec un nom de fichier prérempli à partir d'un gabarit et modifiable.
 - Réglages : auteur, classe, bloc, gabarit de nom, couleur d'accent, mode clair/sombre, police et couleur des titres du document.
 - Accès protégé par un mot de passe unique (`APP_PASSWORD`).
