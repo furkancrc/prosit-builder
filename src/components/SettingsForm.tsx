@@ -124,15 +124,15 @@ export function SettingsForm({ initial }: { initial: Settings }) {
                 ))}
               </select>
             </Field>
-            <Field label="Couleur des titres du document">
+            <Field label="Couleur des numéros et puces du document">
               <div className="flex items-center gap-2">
-                <input type="color" value={s.docHeadingColor} onChange={(e) => set("docHeadingColor", e.target.value.toUpperCase())} className="h-9 w-12 cursor-pointer border border-line bg-surface" />
-                <button type="button" className="btn text-xs" onClick={() => set("docHeadingColor", DEFAULT_SETTINGS.docHeadingColor)}>Bleu du template</button>
-                <button type="button" className="btn text-xs" onClick={() => set("docHeadingColor", "#111111")}>Noir</button>
+                <input type="color" value={s.docSecondaryColor} onChange={(e) => set("docSecondaryColor", e.target.value.toUpperCase())} className="h-9 w-12 cursor-pointer border border-line bg-surface" />
+                <button type="button" className="btn text-xs" onClick={() => set("docSecondaryColor", DEFAULT_SETTINGS.docSecondaryColor)}>Rose (modèle)</button>
+                <button type="button" className="btn text-xs" onClick={() => set("docSecondaryColor", "#111111")}>Noir</button>
               </div>
             </Field>
           </div>
-          <p className="mt-3 text-xs text-muted">La couleur d’accent sert aussi au trait sous le titre du document.</p>
+          <p className="mt-3 text-xs text-muted">La couleur d’accent colore aussi le bloc titre, les repères de section et le trait de l’en-tête du document.</p>
         </Card>
 
         {error && <p className="rounded-sm border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>}

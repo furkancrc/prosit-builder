@@ -93,7 +93,7 @@ export function ListEditor({ items, style, onChange, placeholder, label }: Props
 
   return (
     <div>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext id={`dnd-${label}`} sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
           <ol className="space-y-1" aria-label={label}>
             {items.map((it, i) => (

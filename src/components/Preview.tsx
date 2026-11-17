@@ -1,7 +1,7 @@
 "use client";
 
-import { buildDocModel, listMarker, numberItems, toRoman } from "@/lib/doc-model";
-import { tintHex } from "@/lib/color";
+import { buildDocModel, listMarker, numberItems } from "@/lib/doc-model";
+import { readableOn } from "@/lib/color";
 import type { Content, DocType, Meta, Settings } from "@/lib/schema";
 
 const FONT_STACK: Record<Settings["docFont"], string> = {
@@ -15,62 +15,78 @@ const FONT_STACK: Record<Settings["docFont"], string> = {
 /** Aperçu HTML fidèle à l'export : mêmes blocs, tailles en pt, police et couleurs des réglages. */
 export function Preview({ meta, type, content, settings }: { meta: Meta; type: DocType; content: Content; settings: Settings }) {
   const model = buildDocModel(meta, type, content);
-  const h1 = settings.docHeadingColor;
-  const h2 = tintHex(settings.docHeadingColor, 0.4);
+  const accent = settings.accentColor;
+  const pink = settings.docSecondaryColor;
 
   return (
-    <div className="paper mx-auto w-full max-w-[210mm] px-[8%] py-[7%] text-[11pt] leading-[1.35]" style={{ fontFamily: FONT_STACK[settings.docFont] }}>
-      {model.header && <p className="-mt-6 mb-6 text-right text-[8pt] text-[#808080]">{model.header}</p>}
-      <h1 className="pb-1 text-center text-[clamp(20pt,5vw,36pt)] leading-tight" style={{ color: h1, borderBottom: `2px solid ${settings.accentColor}` }}>
+    <div className="paper mx-auto w-full max-w-[210mm] px-[7%] pt-[5%] pb-[7%] text-[10.5pt] leading-[1.35]" style={{ fontFamily: FONT_STACK[settings.docFont] }}>
+      {/* En-tête de page */}
+      <p className="mb-5 pb-1 font-bold leading-none" style={{ borderBottom: `3px solid ${accent}` }}>
+        <span className="text-[14pt]">CESI</span>
+        <span className="text-[8pt]">&nbsp;&nbsp;_ÉCOLE D&apos;INGÉNIEURS</span>
+      </p>
+
+      <div className="inline-block w-[35%] min-w-fit bg-black px-[10pt] py-[4pt] text-[11pt] font-bold text-white">{model.banner}</div>
+      <div className="px-[13pt] py-[13pt] text-[clamp(14pt,3.5vw,20pt)] font-bold leading-tight" style={{ background: accent, color: readableOn(accent) }}>
         {model.title}
-      </h1>
-      {model.info.length > 0 && (
-        <table className="mt-4 text-[10pt]">
-          <tbody>
-            {model.info.map((i) => (
-              <tr key={i.label}>
-                <th className="pr-4 text-left align-top font-bold">{i.label} :</th>
-                <td>{i.value}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      </div>
+      {model.info && <p className="mt-[4pt] text-[8.5pt] text-[#666]">{model.info}</p>}
+
       {model.blocks.map((b, k) => {
         switch (b.kind) {
-          case "h1":
+          case "section":
             return (
-              <h2 key={k} className="mt-[12pt] mb-[6pt] flex gap-3 text-[16pt] sm:text-[20pt]" style={{ color: h1 }}>
-                <span className="w-[0.55in] shrink-0">{toRoman(b.index)}.</span>
-                <span>{b.text}</span>
-              </h2>
+              <div key={k} className="mt-[12pt] mb-[4pt] flex items-stretch">
+                <span className="w-[17pt] shrink-0" style={{ background: accent }} />
+                <h2 className="flex-1 border-b border-black py-[3pt] pl-[8pt] text-[13pt] font-bold sm:text-[15pt]">
+                  {b.num && <span style={{ color: pink }}>{b.num} </span>}
+                  {b.title}
+                </h2>
+              </div>
             );
-          case "h2":
-            return (
-              <h3 key={k} className="mt-[4pt] mb-[3pt] ml-[0.5in] flex gap-2 text-[13pt] sm:text-[16pt]" style={{ color: h2 }}>
-                <span>{b.index})</span>
-                <span>{b.text}</span>
-              </h3>
-            );
+          case "subheading":
+            return <p key={k} className="mb-[3pt] text-[11pt] font-bold">{b.text}</p>;
           case "para":
-            return <p key={k} className="mb-[8pt] whitespace-pre-wrap">{b.text}</p>;
+            return <p key={k} className="mb-[3pt] whitespace-pre-wrap">{b.text}</p>;
           case "empty":
-            return <p key={k} className="mb-[8pt] text-[#999]">{b.text}</p>;
+            return <p key={k} className="mb-[3pt] text-[#999]">{b.text}</p>;
+          case "roles":
+            return (
+              <ul key={k}>
+                {b.items.map((r) => (
+                  <Item key={r.label} marker="■" pink={pink} level={0} bold>
+                    {r.label} : {r.value}
+                  </Item>
+                ))}
+              </ul>
+            );
           case "list": {
             const nums = numberItems(b.items);
             return (
-              <ul key={k} className="mb-[8pt]">
+              <ul key={k}>
                 {b.items.map((it, i) => (
-                  <li key={it.id} className="flex" style={{ paddingLeft: `${0.25 + it.level * 0.5}in` }}>
-                    <span className="w-[0.25in] shrink-0">{listMarker(b.style, it.level, nums[i])}</span>
-                    <span className="min-w-0 break-words">{it.text}</span>
-                  </li>
+                  <Item key={it.id} marker={listMarker(b.style, it.level, nums[i])} pink={pink} level={it.level}>
+                    {it.text}
+                  </Item>
                 ))}
               </ul>
             );
           }
         }
       })}
+      <p className="mt-8 text-right text-[8pt] font-bold">PROSIT&nbsp;&nbsp;_&nbsp;&nbsp;1</p>
     </div>
+  );
+}
+
+function Item({ marker, pink, level, bold, children }: { marker: string; pink: string; level: number; bold?: boolean; children: React.ReactNode }) {
+  const isSquare = marker === "■";
+  return (
+    <li className={`mb-[3pt] flex ${bold ? "font-bold" : ""}`} style={{ paddingLeft: `${(510 - 283 + level * 397) / 20}pt` }}>
+      <span className={`shrink-0 pr-[4pt] font-bold ${isSquare ? "text-[7pt] leading-[2]" : ""}`} style={{ color: pink }}>
+        {marker}
+      </span>
+      <span className="min-w-0 break-words">{children}</span>
+    </li>
   );
 }

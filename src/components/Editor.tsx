@@ -8,7 +8,7 @@ import { api } from "@/lib/client-api";
 import { buildFilename } from "@/lib/filename";
 import { effectiveMeta } from "@/lib/meta";
 import type { Content, DocType, ListItem, Meta, MetaPatch, Settings } from "@/lib/schema";
-import { coerceContent, getTemplate, type FieldDef } from "@/lib/templates";
+import { coerceContent, getTemplate, sectionNumbers, type FieldDef } from "@/lib/templates";
 import { toRoman } from "@/lib/doc-model";
 import { DownloadDialog } from "./DownloadDialog";
 import { ListEditor } from "./ListEditor";
@@ -45,6 +45,7 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
 
   const doc = docs[tab];
   const template = getTemplate(tab);
+  const sectionNums = sectionNumbers(template);
   const meta = useMemo(() => effectiveMeta(base, tab, tab === "retour" ? doc.overrides : null), [base, tab, doc.overrides]);
   const filename = buildFilename(settings.filenameTemplate, meta, tab);
 
@@ -98,7 +99,16 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
       const hasContent = Object.values(doc.content).some((v) => (typeof v === "string" ? v.trim() : v.length));
       if (hasContent && !confirm(`Remplacer le contenu actuel du prosit ${tab} par celui de « ${file.name} » ?`)) return;
       saveDoc(tab, { content: coerceContent(template, r.content) });
-      if (r.meta.numero && !meta.numero) setMeta("numero", r.meta.numero);
+      if (tab === "aller") {
+        const fill: MetaPatch = {};
+        if (r.meta.numero && !meta.numero) fill.numero = r.meta.numero;
+        if (r.meta.theme && !meta.theme) fill.theme = r.meta.theme;
+        if (Object.keys(fill).length) {
+          const next = { ...base, ...fill };
+          setBase(next);
+          schedule("prosit", () => api(`/api/prosits/${initialProsit.id}`, { method: "PATCH", body: JSON.stringify(next) }));
+        }
+      }
       setNotice(
         `Import de « ${file.name} » terminé.` + (r.unmatched.length ? ` Rubriques non reconnues : ${r.unmatched.join(", ")}.` : ""),
       );
@@ -198,19 +208,23 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
             </p>
           )}
 
-          {template.sections.map((s, si) => (
-            <section key={s.title} className="rounded-sm border border-line bg-surface px-4 py-4">
-              <h2 className="title-cesi mb-3 text-base">
-                <span className="mr-2 text-muted">{toRoman(si + 1)}.</span>
-                <span className="underline-accent">{s.title}</span>
-              </h2>
-              <div className="space-y-4">
-                {s.fields.map((f) => (
-                  <FieldEditor key={`${tab}:${f.key}`} field={f} value={doc.content[f.key]} onChange={(v) => setField(f.key, v)} />
-                ))}
-              </div>
-            </section>
-          ))}
+          {template.sections.map((s, si) => {
+            const n = sectionNums[si];
+            const isRoles = s.fields.every((f) => f.kind === "role");
+            return (
+              <section key={s.title} className="rounded-sm border border-line bg-surface px-4 py-4">
+                <h2 className="title-cesi mb-3 text-base">
+                  {n && <span className="mr-2 text-muted">{toRoman(n)}</span>}
+                  <span className="underline-accent">{s.title}</span>
+                </h2>
+                <div className={isRoles ? "grid gap-3 sm:grid-cols-2" : "space-y-4"}>
+                  {s.fields.map((f) => (
+                    <FieldEditor key={`${tab}:${f.key}`} field={f} value={doc.content[f.key]} onChange={(v) => setField(f.key, v)} />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
 
         {/* Aperçu */}
@@ -240,6 +254,14 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
 
 function FieldEditor({ field, value, onChange }: { field: FieldDef; value: Content[string]; onChange: (v: Content[string]) => void }) {
   const id = `f-${field.key}`;
+  if (field.kind === "role") {
+    return (
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-muted">{field.label}</span>
+        <input className="field" value={typeof value === "string" ? value : ""} placeholder={field.placeholder} onChange={(e) => onChange(e.target.value)} />
+      </label>
+    );
+  }
   return (
     <div>
       {field.heading && (

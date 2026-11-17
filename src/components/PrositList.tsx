@@ -53,12 +53,12 @@ export function PrositList({ initial }: { initial: PrositRow[] }) {
     run(async () => {
       const fd = new FormData();
       fd.append("file", file);
-      const r = await api<{ type: "aller" | "retour" | null; meta: { numero?: string }; content: Record<string, unknown> }>("/api/import", { method: "POST", body: fd });
+      const r = await api<{ type: "aller" | "retour" | null; meta: { numero?: string; theme?: string }; content: Record<string, unknown> }>("/api/import", { method: "POST", body: fd });
       const type = r.type ?? "aller";
       const nom = file.name.replace(/\.docx$/i, "").trim();
       const { id } = await api<{ id: string }>("/api/prosits", {
         method: "POST",
-        body: JSON.stringify({ nom, numero: r.meta.numero, contents: { [type]: r.content } }),
+        body: JSON.stringify({ nom, numero: r.meta.numero, theme: r.meta.theme, contents: { [type]: r.content } }),
       });
       router.push(`/prosits/${id}?tab=${type}`);
     });
