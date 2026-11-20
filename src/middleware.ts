@@ -30,5 +30,8 @@ function deny(req: NextRequest, reason?: string) {
 
 export const config = {
   runtime: "nodejs",
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt).*)"],
+  // Les routes d'envoi de fichiers sont exclues : quand le middleware s'applique, Next.js duplique le corps
+  // de la requête et la route trouve parfois le flux déjà verrouillé (erreur 500 intermittente sur les images).
+  // Elles vérifient la session elles-mêmes (isAuthorized).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|api/assets|api/import).*)"],
 };

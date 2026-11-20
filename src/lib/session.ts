@@ -44,3 +44,17 @@ export async function verifySessionToken(token: string | undefined, now = Date.n
 export function authEnabled(): boolean {
   return !!process.env.APP_PASSWORD;
 }
+
+/**
+ * Même règle que le middleware, pour les routes qu'il ne couvre pas (envois de fichiers) :
+ * session valide, ou pas de mot de passe configuré hors production.
+ */
+export async function isAuthorized(req: Request): Promise<boolean> {
+  if (!authEnabled()) return process.env.NODE_ENV !== "production";
+  const cookie = req.headers.get("cookie") ?? "";
+  const token = cookie
+    .split(/;\s*/)
+    .find((c) => c.startsWith(`${SESSION_COOKIE}=`))
+    ?.slice(SESSION_COOKIE.length + 1);
+  return verifySessionToken(token ? decodeURIComponent(token) : undefined);
+}

@@ -3,11 +3,13 @@ import { handle, jsonError } from "@/lib/api";
 import { importDocx } from "@/lib/docx/import";
 import { saveAsset } from "@/lib/assets";
 import { DocTypeSchema } from "@/lib/schema";
+import { isAuthorized } from "@/lib/session";
 
 const MAX = 10 * 1024 * 1024;
 
 export function POST(req: Request) {
   return handle(async () => {
+    if (!(await isAuthorized(req))) return jsonError(401, "Non authentifié");
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) return jsonError(400, "Aucun fichier reçu");

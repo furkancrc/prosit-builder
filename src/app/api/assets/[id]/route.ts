@@ -1,9 +1,11 @@
 import { jsonError } from "@/lib/api";
 import { getAsset } from "@/lib/assets";
+import { isAuthorized } from "@/lib/session";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: Request, { params }: Ctx) {
+export async function GET(req: Request, { params }: Ctx) {
+  if (!(await isAuthorized(req))) return jsonError(401, "Non authentifié");
   const asset = getAsset((await params).id);
   if (!asset) return jsonError(404, "Image introuvable");
   return new Response(new Uint8Array(asset.data), {
