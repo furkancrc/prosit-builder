@@ -162,10 +162,12 @@ describe("buildDocx (modèle Boucle PBL)", () => {
     expect(blocks[2].rows).toEqual([["Composante", "Exemples"], ["Matériel", "postes, serveurs"]]);
     expect(get("etude").map((i) => i.text)).toEqual(["Réaliser le schéma du SI", "Rappel des rôles"]);
     expect(get("questions").map((i) => [i.text, i.detail])).toEqual([["Qu’est-ce qu’un SI ?", "Voir au-dessus"]]);
+    // AAV : « [n] » = importance, pas de statut coloré (même si une valeur traîne dans les données)
     expect(get("objectifs").map((i) => [i.text, i.status])).toEqual([
-      ["[3] Schématiser le SI", "valid"],
-      ["[4] Cartographie", "partial"],
+      ["[3] Schématiser le SI", undefined],
+      ["[4] Cartographie", undefined],
     ]);
+    expect(doc.match(/Partiellement validée/g)).toHaveLength(1); // une seule légende : celle des pistes
   });
 
   it("l'aller n'exporte ni définitions ni statuts", async () => {

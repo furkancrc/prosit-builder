@@ -12,7 +12,8 @@ Web app pour rédiger les **prosits aller / retour** du CESI et les exporter en 
 - Sauvegarde automatique avec indicateur « Enregistré », et aperçu du document en direct.
 - **Prosit retour / CER**. Le retour reprend automatiquement les éléments de l'aller (bouton « Reprendre depuis l'aller »), puis permet :
   - une **définition / explication** sous chaque élément ; les mots clés sont exportés en tableau « Mot clé | Définition » ;
-  - un **statut** sur les pistes de solution et les AAV : ✔ validée / ◐ partielle / ✘ non validée, surligné en vert, orange ou rouge ;
+  - un **statut** sur les pistes de solution : ✔ validée / ◐ partielle / ✘ non validée, surligné en vert, orange ou rouge ;
+  - les **AAV** (acquis d'apprentissage visés) sans couleur : le nombre entre crochets indique leur importance (« [3] Schématiser le SI… ») ;
   - du **contenu riche** sous chaque élément : paragraphes, **images et schémas** (envoi ou **Ctrl+V** d'une capture), grilles d'images légendées en 1 à 3 colonnes, **tableaux** ;
   - les sections **Synthèse**, **Questions du tuteur**, **AAV** et **Sources** ;
   - `**gras**` dans tous les textes.

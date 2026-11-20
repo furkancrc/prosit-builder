@@ -165,7 +165,7 @@ export const RETOUR_TEMPLATE: TemplateDef = {
           kind: "list",
           heading: false,
           style: "bullet",
-          status: true,
+          // pas de statut coloré : le nombre entre crochets est l'importance de l'acquis (ex. « [3] … »)
           detail: "Commentaire",
           placeholder: "[3] Schématiser le SI avec un logiciel adapté",
         },
