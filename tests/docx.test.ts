@@ -93,11 +93,86 @@ describe("buildDocx (modèle Boucle PBL)", () => {
     expect(doc).not.toContain("EE85A0");
   });
 
-  it("le prosit retour a son propre bandeau", async () => {
-    const buf = await buildDocx({ meta, type: "retour", content: { contenu: "Bilan" }, settings: DEFAULT_SETTINGS });
-    const doc = await (await unzip(buf)).read("word/document.xml");
+  it("le prosit retour exporte définitions, surlignages, images, tableaux et se ré-importe", async () => {
+    // PNG 1×1 valide
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+    const assets = new Map([
+      ["img-a", { type: "png" as const, mime: "image/png", width: 1, height: 1, data: png }],
+      ["img-b", { type: "png" as const, mime: "image/png", width: 1, height: 1, data: png }],
+    ]);
+    const retour: Content = {
+      ...content,
+      motsInconnus: [{ ...li("Accès"), detail: "Possibilité d’utiliser une ressource" }, li("CPU")],
+      pistes: [
+        { ...li("Segmentation réseau"), status: "valid", detail: "Confirmé par le schéma" },
+        { ...li("DHCP mal paramétré"), status: "partial", blocks: [{ id: "t1", type: "text", text: "C'est partiellement vrai." }] },
+        { ...li("Rôles par adresse IP"), status: "invalid" },
+      ],
+      etude: [
+        {
+          ...li("Réaliser le schéma du SI"),
+          blocks: [
+            { id: "i1", type: "images", columns: 1, images: [{ assetId: "img-a", caption: "Schéma Packet Tracer" }] },
+            { id: "i2", type: "images", columns: 2, images: [{ assetId: "img-a", caption: "Étoile" }, { assetId: "img-b", caption: "Bus" }] },
+            { id: "tb", type: "table", header: true, rows: [["Composante", "Exemples"], ["Matériel", "postes, serveurs"]] },
+          ],
+        },
+        li("Rappel des rôles"),
+      ],
+      questions: [{ ...li("Qu’est-ce qu’un SI ?"), detail: "Voir au-dessus" }],
+      objectifs: [{ ...li("[3] Schématiser le SI"), status: "valid" }, { ...li("[4] Cartographie"), status: "partial" }],
+    };
+    const buf = await buildDocx({ meta, type: "retour", content: retour, settings: DEFAULT_SETTINGS, assets });
+    const { read, zip } = await unzip(buf);
+    const doc = await read("word/document.xml");
     expect(doc).toContain("PROSIT RETOUR");
-    expect(doc).toContain("Bilan");
+    expect(doc).toContain("PROSIT RETOUR / CER");
+    expect(doc).toContain(">Mot clé<"); // mots clés en tableau (format CER)
+    expect(doc).toContain(">Possibilité d’utiliser une ressource<");
+    expect(doc).toContain('w:fill="9BE89B"'); // surlignage vert
+    expect(doc).toContain('w:fill="FFC870"'); // orange
+    expect(doc).toContain('w:fill="FF8A8A"'); // rouge
+    expect(doc).toContain("Partiellement validée"); // légende
+    expect(doc).toContain("QUESTIONS DU TUTEUR");
+    expect(doc).toMatch(/>X <\/w:t>[\s\S]*?AAV/);
+    expect(doc).toContain("Schéma Packet Tracer");
+    expect(doc).toContain("<w:drawing>");
+    expect(Object.keys(zip.files).filter((f) => f.startsWith("word/media/")).length).toBeGreaterThanOrEqual(1);
+
+    // ré-import : définitions, statuts, paragraphes, images et tableau retrouvés
+    let n = 0;
+    const back = await importDocx(buf, "retour", () => `asset-${++n}`);
+    type It = { text: string; detail?: string; status?: string; blocks?: { type: string; columns?: number; images?: { caption: string }[]; rows?: string[][]; text?: string }[] };
+    const get = (k: string) => back.content[k] as It[];
+    expect(get("motsInconnus").map((i) => [i.text, i.detail])).toEqual([
+      ["Accès", "Possibilité d’utiliser une ressource"],
+      ["CPU", undefined],
+    ]);
+    expect(get("pistes").map((i) => [i.text, i.status])).toEqual([
+      ["Segmentation réseau", "valid"],
+      ["DHCP mal paramétré", "partial"],
+      ["Rôles par adresse IP", "invalid"],
+    ]);
+    expect(get("pistes")[1].blocks?.[0]).toMatchObject({ type: "text", text: "C'est partiellement vrai." });
+    const blocks = get("etude")[0].blocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(["images", "images", "table"]);
+    expect(blocks[0].images?.[0].caption).toBe("Schéma Packet Tracer");
+    expect(blocks[1]).toMatchObject({ columns: 2 });
+    expect(blocks[1].images?.map((i) => i.caption)).toEqual(["Étoile", "Bus"]);
+    expect(blocks[2].rows).toEqual([["Composante", "Exemples"], ["Matériel", "postes, serveurs"]]);
+    expect(get("etude").map((i) => i.text)).toEqual(["Réaliser le schéma du SI", "Rappel des rôles"]);
+    expect(get("questions").map((i) => [i.text, i.detail])).toEqual([["Qu’est-ce qu’un SI ?", "Voir au-dessus"]]);
+    expect(get("objectifs").map((i) => [i.text, i.status])).toEqual([
+      ["[3] Schématiser le SI", "valid"],
+      ["[4] Cartographie", "partial"],
+    ]);
+  });
+
+  it("l'aller n'exporte ni définitions ni statuts", async () => {
+    const c: Content = { ...content, pistes: [{ ...li("Piste"), status: "valid", detail: "x" }] };
+    const doc = await (await unzip(await buildDocx({ meta, type: "aller", content: c, settings: DEFAULT_SETTINGS }))).read("word/document.xml");
+    expect(doc).not.toContain("2E7D32");
+    expect(doc).not.toContain("Partiellement validée");
   });
 
   it("est ré-importable (docx → champs)", async () => {

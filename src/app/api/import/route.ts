@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { handle, jsonError } from "@/lib/api";
 import { importDocx } from "@/lib/docx/import";
+import { saveAsset } from "@/lib/assets";
 import { DocTypeSchema } from "@/lib/schema";
 
 const MAX = 10 * 1024 * 1024;
@@ -13,7 +14,15 @@ export function POST(req: Request) {
     if (file.size > MAX) return jsonError(413, "Fichier trop volumineux (10 Mo max)");
     const type = DocTypeSchema.optional().parse(form.get("type") || undefined);
     try {
-      return NextResponse.json(await importDocx(await file.arrayBuffer(), type));
+      // les images du document (schémas, captures) sont enregistrées pour les blocs riches du retour
+      const saveImage = (data: Buffer) => {
+        try {
+          return saveAsset(data).id;
+        } catch {
+          return null; // format non pris en charge (EMF, SVG…) : ignorée
+        }
+      };
+      return NextResponse.json(await importDocx(await file.arrayBuffer(), type, saveImage));
     } catch {
       return jsonError(400, "Impossible de lire ce fichier : est-ce bien un .docx ?");
     }
