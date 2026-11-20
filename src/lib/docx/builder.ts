@@ -4,6 +4,7 @@ import {
   Document,
   Footer,
   Header,
+  ImageRun,
   LevelFormat,
   LevelSuffix,
   Packer,
@@ -18,8 +19,10 @@ import {
   WidthType,
   type ILevelsOptions,
 } from "docx";
-import type { Content, DocType, Meta, Settings } from "../schema";
+import { STATUS_META, type Content, type DocType, type ListItem, type Meta, type PisteStatus, type RichBlock, type Settings } from "../schema";
+import { splitBold, stripBold } from "../inline";
 import { buildDocModel, type Block } from "../doc-model";
+import { fitSize, type ImageInfo } from "../image-info";
 import type { ListStyle } from "../templates";
 
 /**
@@ -61,16 +64,157 @@ export interface BuildOptions {
   type: DocType;
   content: Content;
   settings: Pick<Settings, "docFont" | "docSecondaryColor" | "accentColor">;
+  /** Images utilisées par les blocs riches, préchargées (identifiant → données). */
+  assets?: Map<string, ImageInfo & { data: Buffer }>;
 }
 
-export function buildDocument({ meta, type, content, settings }: BuildOptions): Document {
+export function buildDocument({ meta, type, content, settings, assets }: BuildOptions): Document {
   const model = buildDocModel(meta, type, content);
   const font = settings.docFont;
   const accent = hex(settings.accentColor);
   const secondary = hex(settings.docSecondaryColor);
 
-  const run = (text: string, o: { bold?: boolean; size?: number; color?: string } = {}) =>
-    new TextRun({ text, font, bold: o.bold ?? false, size: o.size ?? SZ_BODY, color: o.color ?? "000000" });
+  const run = (text: string, o: { bold?: boolean; size?: number; color?: string; italics?: boolean } = {}) =>
+    new TextRun({ text, font, bold: o.bold ?? false, italics: o.italics, size: o.size ?? SZ_BODY, color: o.color ?? "000000" });
+
+  /** Texte avec **gras** en ligne. */
+  const runs = (text: string, o: { bold?: boolean; size?: number } = {}) =>
+    splitBold(text).map((seg) => run(seg.text, { ...o, bold: o.bold || seg.bold }));
+
+  /** Texte surligné (fond coloré) selon le statut validée / partielle / non validée. */
+  const hl = (text: string, st: PisteStatus, o: { bold?: boolean; size?: number } = {}) =>
+    new TextRun({
+      text,
+      font,
+      bold: o.bold ?? false,
+      size: o.size ?? SZ_BODY,
+      color: "000000",
+      shading: { type: ShadingType.CLEAR, color: "auto", fill: hex(STATUS_META[st].highlight) },
+    });
+
+  // ---------- contenu riche (prosit retour) : texte, images, tableaux ----------
+  const TWIP_PER_PX = 15; // 96 dpi
+  const imageRun = (assetId: string, maxWidthTwips: number) => {
+    const a = assets?.get(assetId);
+    if (!a) return run("[image introuvable]", { italics: true, color: "999999" });
+    const { width, height } = fitSize(a.width, a.height, Math.floor(maxWidthTwips / TWIP_PER_PX), 620);
+    return new ImageRun({ type: a.type, data: a.data, transformation: { width, height } });
+  };
+  const caption = (text: string) =>
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 40, after: 120 }, children: [run(text, { italics: true, size: 18 })] });
+
+  /** Mots clés du retour / CER : tableau « Mot clé | Définition », images éventuelles en dessous. */
+  const keywordTable = (items: ListItem[], headers: [string, string]): (Paragraph | Table)[] => {
+    const line = { style: BorderStyle.SINGLE, size: 4, color: "808080" } as const;
+    const w1 = Math.round(CONTENT_W * 0.34);
+    const cell = (children: Paragraph[], w: number, head = false) =>
+      new TableCell({
+        width: { size: w, type: WidthType.DXA },
+        margins: { top: 40, bottom: 40, left: 90, right: 90 },
+        shading: head ? { type: ShadingType.CLEAR, color: "auto", fill: accent } : undefined,
+        children,
+      });
+    const p = (children: TextRun[]) => new Paragraph({ spacing: { after: 0 }, children });
+    const table = new Table({
+      width: { size: CONTENT_W, type: WidthType.DXA },
+      columnWidths: [w1, CONTENT_W - w1],
+      layout: TableLayoutType.FIXED,
+      borders: { top: line, bottom: line, left: line, right: line, insideHorizontal: line, insideVertical: line },
+      rows: [
+        new TableRow({
+          tableHeader: true,
+          children: headers.map((h, i) => cell([p([run(h, { bold: true, color: readableOn(settings.accentColor) })])], i ? CONTENT_W - w1 : w1, true)),
+        }),
+        ...items.map(
+          (it) =>
+            new TableRow({
+              cantSplit: true,
+              children: [cell([p(runs(it.text, { bold: true }))], w1), cell((it.detail ?? "").split(/\r?\n/).map((l) => p(runs(l))), CONTENT_W - w1)],
+            }),
+        ),
+      ],
+    });
+    // contenu riche éventuel d'un mot clé (schéma…) : sous le tableau, précédé du mot clé
+    const extra = items.flatMap((it) =>
+      it.blocks?.length
+        ? [new Paragraph({ keepNext: true, spacing: { before: 120, after: 40 }, children: runs(it.text, { bold: true }) }), ...it.blocks.flatMap((rb) => richBlock(rb, 0))]
+        : [],
+    );
+    return [table, spacer(100), ...extra];
+  };
+
+  const richBlock = (rb: RichBlock, indent: number): (Paragraph | Table)[] => {
+    const avail = CONTENT_W - indent;
+    if (rb.type === "text") {
+      return rb.text
+        .split(/\r?\n/)
+        .map((line) => new Paragraph({ indent: { left: indent }, spacing: { after: 60, line: 276 }, children: runs(line) }));
+    }
+    if (rb.type === "images") {
+      const cols = Math.max(1, Math.min(rb.columns, rb.images.length));
+      if (cols === 1) {
+        return rb.images.flatMap((im) => [
+          new Paragraph({ alignment: AlignmentType.CENTER, keepNext: !!im.caption, spacing: { before: 80, after: im.caption ? 0 : 120 }, children: [imageRun(im.assetId, avail)] }),
+          ...(im.caption ? [caption(im.caption)] : []),
+        ]);
+      }
+      const colW = Math.floor(avail / cols);
+      const rows: TableRow[] = [];
+      for (let i = 0; i < rb.images.length; i += cols) {
+        const chunk = rb.images.slice(i, i + cols);
+        rows.push(
+          new TableRow({
+            cantSplit: true,
+            children: Array.from({ length: cols }, (_, c) => {
+              const im = chunk[c];
+              return new TableCell({
+                width: { size: colW, type: WidthType.DXA },
+                borders: NO_BORDERS,
+                margins: { top: 60, bottom: 60, left: 80, right: 80 },
+                children: im
+                  ? [new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 0 }, children: [imageRun(im.assetId, colW - 160)] }), ...(im.caption ? [caption(im.caption)] : [])]
+                  : [new Paragraph({ children: [] })],
+              });
+            }),
+          }),
+        );
+      }
+      return [
+        new Table({ width: { size: avail, type: WidthType.DXA }, columnWidths: Array(cols).fill(colW), layout: TableLayoutType.FIXED, indent: { size: indent, type: WidthType.DXA }, borders: TABLE_NO_BORDERS, rows }),
+        spacer(80),
+      ];
+    }
+    // tableau
+    const ncols = Math.max(1, ...rb.rows.map((r) => r.length));
+    const colW = Math.floor(avail / ncols);
+    const line = { style: BorderStyle.SINGLE, size: 4, color: "BFBFBF" } as const;
+    return [
+      new Table({
+        width: { size: avail, type: WidthType.DXA },
+        columnWidths: Array(ncols).fill(colW),
+        layout: TableLayoutType.FIXED,
+        indent: { size: indent, type: WidthType.DXA },
+        borders: { top: line, bottom: line, left: line, right: line, insideHorizontal: line, insideVertical: line },
+        rows: rb.rows.map(
+          (r, ri) =>
+            new TableRow({
+              tableHeader: rb.header && ri === 0,
+              cantSplit: true,
+              children: Array.from({ length: ncols }, (_, ci) => {
+                const head = rb.header && ri === 0;
+                return new TableCell({
+                  width: { size: colW, type: WidthType.DXA },
+                  margins: { top: 50, bottom: 50, left: 90, right: 90 },
+                  shading: head ? { type: ShadingType.CLEAR, color: "auto", fill: "F2F2F2" } : undefined,
+                  children: (r[ci] ?? "").split(/\r?\n/).map((t) => new Paragraph({ spacing: { after: 0 }, children: runs(t, { bold: head, size: 19 }) })),
+                });
+              }),
+            }),
+        ),
+      }),
+      spacer(100),
+    ];
+  };
 
   // ---------- numérotation (puces ■ roses, sous-niveaux numérotés) ----------
   const markerRun = { bold: true, color: secondary, size: SZ_BULLET, font };
@@ -139,7 +283,7 @@ export function buildDocument({ meta, type, content, settings }: BuildOptions): 
       case "subheading":
         return [new Paragraph({ keepNext: true, spacing: { after: 60 }, children: [run(b.text, { bold: true, size: 22 })] })];
       case "para":
-        return [new Paragraph({ spacing: { after: 60, line: 276 }, children: [run(b.text)] })];
+        return [new Paragraph({ spacing: { after: 60, line: 276 }, children: runs(b.text) })];
       case "empty":
         return [new Paragraph({ spacing: { after: 60 }, children: [run(b.text, { color: "999999" })] })];
       case "roles":
@@ -151,15 +295,41 @@ export function buildDocument({ meta, type, content, settings }: BuildOptions): 
               children: [run(`${r.label} : ${r.value}`, { bold: true })],
             }),
         );
+      case "legend":
+        return [
+          new Paragraph({
+            spacing: { after: 80 },
+            children: (Object.keys(STATUS_META) as PisteStatus[]).flatMap((st, i) => [
+              ...(i ? [run("   ", { size: 17 })] : []),
+              hl(` ${STATUS_META[st].symbol} ${STATUS_META[st].label} `, st, { size: 17, bold: true }),
+            ]),
+          }),
+        ];
       case "list":
-        return b.items.map(
-          (it) =>
+        if (b.asTable) return keywordTable(b.items, b.asTable);
+        return b.items.flatMap((it) => {
+          const st = it.status;
+          const children: TextRun[] = [];
+          // élément en gras quand il est suivi d'une définition / explication (prosit retour),
+          // surligné en vert / orange / rouge selon son statut
+          if (st) children.push(hl(`${STATUS_META[st].symbol} ${stripBold(it.text)}`, st, { bold: true }));
+          else children.push(...runs(it.text, { bold: !!it.detail || !!it.blocks }));
+          if (it.detail) {
+            it.detail.split(/\r?\n/).forEach((line, i) => {
+              if (i === 0) children.push(run(" : "), ...runs(line));
+              else children.push(new TextRun({ text: "", break: 1 }), ...runs(line));
+            });
+          }
+          const indent = LIST_LEFT + it.level * LIST_STEP;
+          return [
             new Paragraph({
               spacing: { after: 60 },
               numbering: { reference: b.style, level: it.level, instance: b.instance },
-              children: [run(it.text)],
+              children,
             }),
-        );
+            ...(it.blocks ?? []).flatMap((rb) => richBlock(rb, indent)),
+          ];
+        });
     }
   };
 

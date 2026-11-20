@@ -3,12 +3,50 @@ import { z } from "zod";
 export const MAX_LEVEL = 2;
 
 /** Un élément de liste : stocké « à plat » avec un niveau d'indentation (0 à MAX_LEVEL). */
+export const PisteStatusSchema = z.enum(["valid", "partial", "invalid"]);
+export type PisteStatus = z.infer<typeof PisteStatusSchema>;
+
+/** Blocs de contenu riche sous un élément du prosit retour. */
+export const RichBlockSchema = z.discriminatedUnion("type", [
+  z.object({ id: z.string().max(64), type: z.literal("text"), text: z.string().max(20000) }),
+  z.object({
+    id: z.string().max(64),
+    type: z.literal("images"),
+    /** Nombre de colonnes de la grille (1 = pleine largeur). */
+    columns: z.number().int().min(1).max(3),
+    images: z.array(z.object({ assetId: z.string().max(64), caption: z.string().max(500) })).max(12),
+  }),
+  z.object({
+    id: z.string().max(64),
+    type: z.literal("table"),
+    header: z.boolean(),
+    rows: z.array(z.array(z.string().max(2000)).max(8)).max(60),
+  }),
+]);
+export type RichBlock = z.infer<typeof RichBlockSchema>;
+
 export const ListItemSchema = z.object({
   id: z.string().min(1).max(64),
   text: z.string().max(5000),
   level: z.number().int().min(0).max(MAX_LEVEL),
+  /** Prosit retour : définition / explication de l'élément. */
+  detail: z.string().max(10000).optional(),
+  /** Prosit retour : statut d'une piste de solution. */
+  status: PisteStatusSchema.optional(),
+  /** Prosit retour : contenu riche (paragraphes, images, tableaux) sous l'élément. */
+  blocks: z.array(RichBlockSchema).max(40).optional(),
 });
 export type ListItem = z.infer<typeof ListItemSchema>;
+
+/**
+ * color : couleur franche (boutons, légende) ; highlight : surlignage du texte dans le document,
+ * comme les pistes et AAV surlignés du modèle « PrositRetourPBL1.docx ».
+ */
+export const STATUS_META: Record<PisteStatus, { label: string; short: string; color: string; highlight: string; symbol: string }> = {
+  valid: { label: "Validée", short: "Validée", color: "#2E7D32", highlight: "#9BE89B", symbol: "✔" },
+  partial: { label: "Partiellement validée", short: "Partielle", color: "#E67E00", highlight: "#FFC870", symbol: "◐" },
+  invalid: { label: "Non validée", short: "Non validée", color: "#C62828", highlight: "#FF8A8A", symbol: "✘" },
+};
 
 export const FieldValueSchema = z.union([z.string().max(50000), z.array(ListItemSchema).max(500)]);
 export type FieldValue = z.infer<typeof FieldValueSchema>;

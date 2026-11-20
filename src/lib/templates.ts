@@ -19,7 +19,18 @@ interface FieldBase {
 
 export type FieldDef =
   | (FieldBase & { kind: "text" })
-  | (FieldBase & { kind: "list"; style: ListStyle })
+  | (FieldBase & {
+      kind: "list";
+      style: ListStyle;
+      /** Libellé du champ de définition / explication sous chaque élément (prosit retour). */
+      detail?: string;
+      /** Chaque élément porte un statut validée / partielle / non validée (pistes du retour). */
+      status?: boolean;
+      /** Contenu riche (paragraphes, images, tableaux) possible sous chaque élément. */
+      rich?: boolean;
+      /** Rendu en tableau à deux colonnes (élément | définition) dans le document, comme dans un CER. */
+      asTable?: [string, string];
+    })
   /** Champ court affiché « Libellé : valeur » en gras (section Rôles). */
   | (FieldBase & { kind: "role" });
 
@@ -96,17 +107,74 @@ export const ALLER_TEMPLATE: TemplateDef = {
   ],
 };
 
+/** Ajouts du prosit retour par champ de liste : libellé de la définition, statut éventuel. */
+const RETOUR_LIST_EXTRAS: Record<string, { detail: string; status?: boolean; rich?: boolean; asTable?: [string, string] }> = {
+  motsInconnus: { detail: "Définition", rich: true, asTable: ["Mot clé", "Définition"] },
+  contraintes: { detail: "Explication", rich: true },
+  livrables: { detail: "Réalisé / commentaire", rich: true },
+  pistes: { detail: "Justification", status: true, rich: true },
+  etude: { detail: "Ce qu’on a appris", rich: true },
+  realisation: { detail: "Résultat", rich: true },
+};
+
 /**
- * Prosit retour : rubriques encore à définir avec l'utilisateur.
- * En attendant, un seul champ libre (aucune rubrique inventée).
+ * Prosit retour (qui sert aussi de CER) : mêmes rubriques que l'aller, chaque élément reçoit une
+ * définition ou une explication et du contenu riche (images, tableaux), les pistes un statut coloré,
+ * puis viennent la synthèse du cours, les questions du tuteur, les AAV et les sources
+ * (d'après « Prosit Retour SI - 1.docx », « PrositRetourPBL1.docx » et « CER_1_Prosit_1.pdf »).
  */
 export const RETOUR_TEMPLATE: TemplateDef = {
   type: "retour",
   label: "Prosit retour",
   sections: [
+    ...ALLER_TEMPLATE.sections.map((s) => ({
+      ...s,
+      fields: s.fields.map((f): FieldDef => (f.kind === "list" && RETOUR_LIST_EXTRAS[f.key] ? { ...f, ...RETOUR_LIST_EXTRAS[f.key] } : f)),
+    })),
     {
-      title: "Contenu",
-      fields: [{ key: "contenu", label: "Contenu", kind: "text", heading: false, placeholder: "Rubriques du prosit retour à définir…" }],
+      title: "Synthèse",
+      aliases: ["synthese du cours", "cer", "notions", "cours"],
+      fields: [
+        { key: "syntheseIntro", label: "Introduction", kind: "text", heading: false, placeholder: "Un **système d’information** est l’ensemble organisé des ressources qui…" },
+        {
+          key: "notions",
+          label: "Notions",
+          kind: "list",
+          heading: false,
+          style: "bullet",
+          detail: "Explication",
+          rich: true,
+          placeholder: "Infrastructure ≠ S.I.",
+        },
+      ],
+    },
+    {
+      title: "Questions du tuteur",
+      aliases: ["questions", "question", "question du tuteur", "questions du tuteur"],
+      fields: [
+        { key: "questions", label: "Questions", kind: "list", heading: false, style: "bullet", detail: "Réponse", rich: true, placeholder: "Qu’est-ce qu’un SI ?" },
+      ],
+    },
+    {
+      title: "AAV",
+      aliases: ["acquis d'apprentissage vises", "objectifs d'apprentissage", "objectifs", "aav acquis d'apprentissage vises"],
+      fields: [
+        {
+          key: "objectifs",
+          label: "Acquis d’apprentissage visés",
+          kind: "list",
+          heading: false,
+          style: "bullet",
+          status: true,
+          detail: "Commentaire",
+          placeholder: "[3] Schématiser le SI avec un logiciel adapté",
+        },
+      ],
+    },
+    {
+      title: "Sources",
+      aliases: ["sources complementaires", "bibliographie", "references"],
+      fields: [{ key: "sources", label: "Sources", kind: "list", heading: false, style: "bullet", placeholder: "manager-go.com (« Système d’information »)" }],
     },
   ],
 };
@@ -150,4 +218,38 @@ export function coerceContent(t: TemplateDef, raw: Content | undefined): Content
     }
   }
   return out;
+}
+
+/**
+ * Reporte dans le retour ce qui manque par rapport à l'aller, sans rien écraser :
+ * champs texte / rôles vides remplis, éléments de liste absents (même texte) ajoutés.
+ * Les définitions et statuts déjà saisis dans le retour sont conservés.
+ */
+export function mergeAllerIntoRetour(aller: Content, retour: Content): { content: Content; added: number } {
+  const out = coerceContent(RETOUR_TEMPLATE, retour);
+  const src = coerceContent(ALLER_TEMPLATE, aller);
+  let added = 0;
+  for (const f of allFields(ALLER_TEMPLATE)) {
+    const a = src[f.key];
+    const r = out[f.key];
+    if (typeof a === "string") {
+      if (typeof r === "string" && !r.trim() && a.trim()) {
+        out[f.key] = a;
+        added++;
+      }
+    } else if (Array.isArray(a) && Array.isArray(r)) {
+      const norm = (t: string) => t.trim().toLowerCase();
+      const have = new Set(r.map((i) => norm(i.text)));
+      const missing = a.filter((i) => i.text.trim() && !have.has(norm(i.text)));
+      if (missing.length) {
+        out[f.key] = [...r.filter((i) => i.text.trim()), ...missing.map((i) => ({ id: `${i.id}-r`, text: i.text, level: i.level }))];
+        added += missing.length;
+      }
+    }
+  }
+  return { content: out, added };
+}
+
+export function isContentEmpty(c: Content): boolean {
+  return Object.values(c).every((v) => (typeof v === "string" ? !v.trim() : !v.some((i) => i.text.trim())));
 }

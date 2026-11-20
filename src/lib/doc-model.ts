@@ -1,4 +1,4 @@
-import type { Content, DocType, ListItem, Meta } from "./schema";
+import type { Content, DocType, ListItem, Meta, RichBlock } from "./schema";
 import { normalizeList } from "./schema";
 import { coerceContent, getTemplate, sectionNumbers, type ListStyle } from "./templates";
 import { formatDateFr } from "./meta";
@@ -8,7 +8,9 @@ export type Block =
   | { kind: "section"; title: string; num?: string }
   | { kind: "subheading"; text: string }
   | { kind: "para"; text: string }
-  | { kind: "list"; style: ListStyle; items: ListItem[]; instance: number }
+  | { kind: "list"; style: ListStyle; items: ListItem[]; instance: number; withStatus?: boolean; asTable?: [string, string] }
+  /** Légende des couleurs de statut (pistes de solution du retour). */
+  | { kind: "legend" }
   | { kind: "roles"; items: { label: string; value: string }[] }
   | { kind: "empty"; text: string };
 
@@ -54,7 +56,17 @@ export function buildDocModel(meta: Meta, type: DocType, rawContent: Content): D
       } else {
         const items = normalizeList((v as ListItem[]).filter((i) => i.text.trim() !== ""));
         if (items.length === 0) blocks.push({ kind: "empty", text: "—" });
-        else blocks.push({ kind: "list", style: f.style, items, instance: ++listInstance });
+        else {
+          if (f.status) blocks.push({ kind: "legend" });
+          // les définitions / statuts ne sont rendus que si le champ les prévoit
+          const clean = items.map((i) => ({
+            ...i,
+            detail: f.detail ? i.detail?.trim() || undefined : undefined,
+            status: f.status ? i.status : undefined,
+            blocks: f.rich ? cleanBlocks(i.blocks) : undefined,
+          }));
+          blocks.push({ kind: "list", style: f.style, items: clean, instance: ++listInstance, withStatus: !!f.status, asTable: f.asTable });
+        }
       }
     }
   });
@@ -71,7 +83,7 @@ export function buildDocModel(meta: Meta, type: DocType, rawContent: Content): D
 
   return {
     type,
-    banner: type === "aller" ? "PROSIT ALLER" : "PROSIT RETOUR",
+    banner: type === "aller" ? "PROSIT ALLER" : "PROSIT RETOUR / CER",
     title: `Boucle PBL : ${meta.theme || meta.nom || "…"}`,
     info,
     blocks,
@@ -105,4 +117,24 @@ export function numberItems(items: ListItem[]): number[] {
     for (let l = it.level + 1; l < counters.length; l++) counters[l] = 0;
     return counters[it.level];
   });
+}
+
+/** Retire les blocs vides (texte vide, grille sans image, tableau sans contenu). */
+export function cleanBlocks(blocks: RichBlock[] | undefined): RichBlock[] | undefined {
+  const out = (blocks ?? []).filter((b) => {
+    if (b.type === "text") return b.text.trim() !== "";
+    if (b.type === "images") return b.images.length > 0;
+    return b.rows.some((r) => r.some((c) => c.trim() !== ""));
+  });
+  return out.length ? out : undefined;
+}
+
+/** Identifiants de toutes les images utilisées dans un contenu (pour les précharger à l'export). */
+export function collectAssetIds(content: Content): string[] {
+  const ids = new Set<string>();
+  for (const v of Object.values(content)) {
+    if (!Array.isArray(v)) continue;
+    for (const it of v) for (const b of it.blocks ?? []) if (b.type === "images") b.images.forEach((im) => ids.add(im.assetId));
+  }
+  return [...ids];
 }

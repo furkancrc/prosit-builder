@@ -1,6 +1,8 @@
 import { handle, jsonError } from "@/lib/api";
 import { getDocument, getProsit, getSettings } from "@/lib/db";
 import { buildDocx } from "@/lib/docx/builder";
+import { loadAssets } from "@/lib/assets";
+import { collectAssetIds } from "@/lib/doc-model";
 import { buildFilename, withExtension } from "@/lib/filename";
 import { effectiveMeta } from "@/lib/meta";
 import { docxToPdf, PdfUnavailableError } from "@/lib/pdf";
@@ -23,7 +25,8 @@ export function GET(req: Request, { params }: Ctx) {
 
     const settings = getSettings();
     const meta = effectiveMeta(prosit, doc.type, doc.metaOverrides);
-    const docx = await buildDocx({ meta, type: doc.type, content: doc.content, settings });
+    const assets = loadAssets(collectAssetIds(doc.content));
+    const docx = await buildDocx({ meta, type: doc.type, content: doc.content, settings, assets });
 
     let body: Buffer = docx;
     if (format === "pdf") {
