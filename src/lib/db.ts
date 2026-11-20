@@ -66,6 +66,19 @@ function migrate(db: Database.Database) {
       PRAGMA user_version = 2;
     `);
   }
+  if (version < 3) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS assets (
+        id TEXT PRIMARY KEY,
+        mime TEXT NOT NULL,
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        size INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      PRAGMA user_version = 3;
+    `);
+  }
 }
 
 // Réinitialisé à chaque (re)chargement du module : en dev, la connexion mise en cache
