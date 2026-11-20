@@ -10,6 +10,14 @@ Web app pour rédiger les **prosits aller / retour** du CESI et les exporter en 
 - Onglets **Aller** et **Retour**. Le retour reprend les métadonnées de l'aller, et chacune peut être surchargée.
 - Formulaire par rubrique avec des listes : glisser-déposer, sous-éléments, numérotation automatique et raccourcis clavier (Entrée, Tab, Maj+Tab, Alt+↑/↓, Retour arrière sur une ligne vide).
 - Sauvegarde automatique avec indicateur « Enregistré », et aperçu du document en direct.
+- **Prosit retour / CER**. Le retour reprend automatiquement les éléments de l'aller (bouton « Reprendre depuis l'aller »), puis permet :
+  - une **définition / explication** sous chaque élément ; les mots clés sont exportés en tableau « Mot clé | Définition » ;
+  - un **statut** sur les pistes de solution et les AAV : ✔ validée / ◐ partielle / ✘ non validée, surligné en vert, orange ou rouge ;
+  - du **contenu riche** sous chaque élément : paragraphes, **images et schémas** (envoi ou **Ctrl+V** d'une capture), grilles d'images légendées en 1 à 3 colonnes, **tableaux** ;
+  - les sections **Synthèse**, **Questions du tuteur**, **AAV** et **Sources** ;
+  - `**gras**` dans tous les textes.
+
+  L'import d'un .docx de retour reprend les définitions (« mot : définition »), les surlignages, les images et les tableaux. Les images sont stockées dans `/data/assets`.
 - Navigation par rubriques : barre latérale avec l'état de chaque rubrique (remplie ou non), boutons précédent / suivant.
 - **Annuler / Rétablir** (Ctrl+Z, Ctrl+Maj+Z ou Ctrl+Y), import et réinitialisation compris.
 - **Mode Présentation** : une fenêtre à projeter, mise à jour en direct, qui surligne la rubrique en cours. Plein écran possible.
