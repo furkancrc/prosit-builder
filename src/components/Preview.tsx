@@ -2,7 +2,8 @@
 
 import { buildDocModel, listMarker, numberItems } from "@/lib/doc-model";
 import { readableOn } from "@/lib/color";
-import type { Content, DocType, Meta, Settings } from "@/lib/schema";
+import { STATUS_META, type Content, type DocType, type Meta, type PisteStatus, type Settings } from "@/lib/schema";
+import { BlocksView, Inline, KeywordTable } from "./RichView";
 
 const FONT_STACK: Record<Settings["docFont"], string> = {
   Arial: "Arial, 'Liberation Sans', Helvetica, sans-serif",
@@ -47,7 +48,11 @@ export function Preview({ meta, type, content, settings }: { meta: Meta; type: D
           case "subheading":
             return <p key={k} className="mb-[3pt] text-[11pt] font-bold">{b.text}</p>;
           case "para":
-            return <p key={k} className="mb-[3pt] whitespace-pre-wrap">{b.text}</p>;
+            return (
+              <p key={k} className="mb-[3pt] whitespace-pre-wrap">
+                <Inline text={b.text} />
+              </p>
+            );
           case "empty":
             return <p key={k} className="mb-[3pt] text-[#999]">{b.text}</p>;
           case "roles":
@@ -60,15 +65,40 @@ export function Preview({ meta, type, content, settings }: { meta: Meta; type: D
                 ))}
               </ul>
             );
+          case "legend":
+            return (
+              <p key={k} className="mb-[4pt] flex flex-wrap gap-x-[10pt] text-[8.5pt] font-bold">
+                {(Object.keys(STATUS_META) as PisteStatus[]).map((st) => (
+                  <span key={st} className="px-[2pt]" style={{ background: STATUS_META[st].highlight }}>
+                    {STATUS_META[st].symbol} {STATUS_META[st].label}
+                  </span>
+                ))}
+              </p>
+            );
           case "list": {
+            if (b.asTable)
+              return <KeywordTable key={k} items={b.items} headers={b.asTable} accent={accent} accentFg={readableOn(accent)} />;
             const nums = numberItems(b.items);
             return (
               <ul key={k}>
-                {b.items.map((it, i) => (
-                  <Item key={it.id} marker={listMarker(b.style, it.level, nums[i])} pink={pink} level={it.level}>
-                    {it.text}
-                  </Item>
-                ))}
+                {b.items.map((it, i) => {
+                  const st = it.status ? STATUS_META[it.status] : undefined;
+                  return (
+                    <Item key={it.id} marker={listMarker(b.style, it.level, nums[i])} pink={pink} level={it.level}>
+                      <span style={st ? { background: st.highlight } : undefined} className={it.detail || it.blocks || st ? "font-bold" : ""}>
+                        {st && `${st.symbol} `}
+                        <Inline text={it.text} />
+                      </span>
+                      {it.detail && (
+                        <span className="whitespace-pre-wrap">
+                          {" : "}
+                          <Inline text={it.detail} />
+                        </span>
+                      )}
+                      {it.blocks && <BlocksView blocks={it.blocks} />}
+                    </Item>
+                  );
+                })}
               </ul>
             );
           }
@@ -86,7 +116,7 @@ function Item({ marker, pink, level, bold, children }: { marker: string; pink: s
       <span className={`shrink-0 pr-[4pt] font-bold ${isSquare ? "text-[7pt] leading-[2]" : ""}`} style={{ color: pink }}>
         {marker}
       </span>
-      <span className="min-w-0 break-words">{children}</span>
+      <div className="min-w-0 flex-1 break-words">{children}</div>
     </li>
   );
 }

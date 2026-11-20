@@ -15,9 +15,10 @@ import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useRef, useState } from "react";
 import { listMarker, numberItems } from "@/lib/doc-model";
 import { moveItem, moveSibling, newItemId, shiftLevel } from "@/lib/list-ops";
-import { MAX_LEVEL, normalizeList, type ListItem } from "@/lib/schema";
+import { MAX_LEVEL, STATUS_META, normalizeList, type ListItem, type PisteStatus } from "@/lib/schema";
 import type { ListStyle } from "@/lib/templates";
 import { IconDown, IconGrip, IconIndent, IconOutdent, IconPlus, IconTrash, IconUp } from "./icons";
+import { RichBlocks, clipboardImages, imagesBlockFromFiles } from "./RichBlocks";
 
 interface Props {
   items: ListItem[];
@@ -25,9 +26,15 @@ interface Props {
   onChange: (items: ListItem[]) => void;
   placeholder?: string;
   label: string;
+  /** Prosit retour : libellé du champ définition / explication sous chaque élément. */
+  detailLabel?: string;
+  /** Prosit retour : statut validée / partielle / non validée par élément. */
+  withStatus?: boolean;
+  /** Prosit retour : blocs riches (texte, images, tableaux) sous chaque élément. */
+  rich?: boolean;
 }
 
-export function ListEditor({ items, style, onChange, placeholder, label }: Props) {
+export function ListEditor({ items, style, onChange, placeholder, label, detailLabel, withStatus, rich }: Props) {
   const [focusId, setFocusId] = useState<string | null>(null);
   const inputs = useRef(new Map<string, HTMLTextAreaElement>());
   const numbers = numberItems(items);
@@ -50,7 +57,7 @@ export function ListEditor({ items, style, onChange, placeholder, label }: Props
 
   const idx = (id: string) => items.findIndex((i) => i.id === id);
 
-  const update = (id: string, text: string) => onChange(items.map((i) => (i.id === id ? { ...i, text } : i)));
+  const update = (id: string, patch: Partial<ListItem>) => onChange(items.map((i) => (i.id === id ? { ...i, ...patch } : i)));
 
   const insertAfter = (i: number, level?: number) => {
     const it: ListItem = { id: newItemId(), text: "", level: level ?? (i >= 0 ? items[i].level : 0) };
@@ -103,7 +110,10 @@ export function ListEditor({ items, style, onChange, placeholder, label }: Props
                 marker={listMarker(style, it.level, numbers[i])}
                 placeholder={placeholder}
                 inputRef={(el) => (el ? inputs.current.set(it.id, el) : inputs.current.delete(it.id))}
-                onText={(t) => update(it.id, t)}
+                onPatch={(patch) => update(it.id, patch)}
+                detailLabel={detailLabel}
+                withStatus={withStatus}
+                rich={rich}
                 onKeyDown={(e) => onKeyDown(e, i)}
                 canIndent={i > 0 && it.level < MAX_LEVEL && it.level <= items[i - 1].level}
                 canOutdent={it.level > 0}
@@ -129,7 +139,10 @@ interface RowProps {
   marker: string;
   placeholder?: string;
   inputRef: (el: HTMLTextAreaElement | null) => void;
-  onText: (t: string) => void;
+  onPatch: (patch: Partial<ListItem>) => void;
+  detailLabel?: string;
+  withStatus?: boolean;
+  rich?: boolean;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   canIndent: boolean;
   canOutdent: boolean;
@@ -158,12 +171,33 @@ function Row(p: RowProps) {
     return () => ro.disconnect();
   }, [p.item.text]);
 
+  // Ctrl+V d'une capture d'écran n'importe où dans l'élément → bloc image ajouté sous l'élément
+  const [pasting, setPasting] = useState(false);
+  const itemRef = useRef(p.item);
+  itemRef.current = p.item;
+  const onPaste = async (e: React.ClipboardEvent) => {
+    const files = clipboardImages(e);
+    if (!files.length) return;
+    e.preventDefault();
+    setPasting(true);
+    try {
+      const block = await imagesBlockFromFiles(files);
+      p.onPatch({ blocks: [...(itemRef.current.blocks ?? []), block] });
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setPasting(false);
+    }
+  };
+
   return (
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition, marginLeft: `${p.item.level * 1.5}rem` }}
-      className={`group flex items-start gap-1 rounded-sm ${isDragging ? "relative z-10 bg-surface-2 shadow-md" : ""}`}
+      className={`group rounded-sm ${isDragging ? "relative z-10 bg-surface-2 shadow-md" : ""} ${p.detailLabel || p.withStatus || p.rich ? "pb-2" : ""}`}
+      onPaste={p.rich ? onPaste : undefined}
     >
+      <div className="flex items-start gap-1">
       <button
         type="button"
         ref={setActivatorNodeRef}
@@ -184,7 +218,7 @@ function Row(p: RowProps) {
         rows={1}
         value={p.item.text}
         placeholder={p.placeholder}
-        onChange={(e) => p.onText(e.target.value.replace(/\n/g, " "))}
+        onChange={(e) => p.onPatch({ text: e.target.value.replace(/\n/g, " ") })}
         onKeyDown={p.onKeyDown}
         className="field min-w-0 flex-1 resize-none overflow-hidden py-1.5 leading-snug"
       />
@@ -195,6 +229,22 @@ function Row(p: RowProps) {
         <IconBtn label="Descendre (Alt+↓)" onClick={p.onDown} className="hidden sm:inline-flex"><IconDown /></IconBtn>
         <IconBtn label="Supprimer" onClick={p.onDelete} className="hover:text-danger"><IconTrash /></IconBtn>
       </div>
+      </div>
+      {(p.withStatus || p.detailLabel || p.rich) && (
+        <div className="ml-[3.25rem] mt-1 space-y-1 border-l-2 border-line pl-2">
+          {p.withStatus && <StatusPicker value={p.item.status} onChange={(status) => p.onPatch({ status })} />}
+          {p.detailLabel && (
+            <AutoTextarea
+              value={p.item.detail ?? ""}
+              placeholder={p.detailLabel + "…"}
+              aria-label={p.detailLabel + " de « " + (p.item.text || "élément") + " »"}
+              onChange={(detail) => p.onPatch({ detail })}
+            />
+          )}
+          {p.rich && <RichBlocks blocks={p.item.blocks ?? []} onChange={(blocks) => p.onPatch({ blocks })} />}
+          {pasting && <p className="text-xs text-muted">Envoi de l’image collée…</p>}
+        </div>
+      )}
     </li>
   );
 }
@@ -204,5 +254,51 @@ function IconBtn({ label, onClick, disabled, className = "", children }: { label
     <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className={`inline-flex rounded-sm p-1.5 text-muted hover:text-ink disabled:opacity-25 ${className}`}>
       {children}
     </button>
+  );
+}
+
+function StatusPicker({ value, onChange }: { value?: PisteStatus; onChange: (v: PisteStatus | undefined) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Statut de la piste">
+      {(Object.keys(STATUS_META) as PisteStatus[]).map((st) => {
+        const m = STATUS_META[st];
+        const on = value === st;
+        return (
+          <button
+            key={st}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(on ? undefined : st)}
+            className="rounded-sm border px-2 py-0.5 text-xs font-semibold"
+            style={on ? { background: m.color, borderColor: m.color, color: "#fff" } : { borderColor: m.color, color: m.color }}
+            title={on ? "Cliquer pour retirer le statut" : m.label}
+          >
+            {m.symbol} {m.short}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function AutoTextarea({ value, onChange, placeholder, ...rest }: { value: string; onChange: (v: string) => void; placeholder?: string; "aria-label"?: string }) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      className="field resize-none overflow-hidden bg-surface-2 py-1.5 text-[0.85rem] leading-snug"
+      {...rest}
+    />
   );
 }

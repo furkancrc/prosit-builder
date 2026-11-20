@@ -9,7 +9,7 @@ import { buildFilename } from "@/lib/filename";
 import { effectiveMeta } from "@/lib/meta";
 import { channelName, type PresentationMessage } from "@/lib/presentation";
 import type { Content, DocType, ListItem, Meta, MetaPatch, Settings } from "@/lib/schema";
-import { coerceContent, emptyContent, getTemplate, sectionNumbers, type FieldDef } from "@/lib/templates";
+import { coerceContent, emptyContent, getTemplate, isContentEmpty, mergeAllerIntoRetour, sectionNumbers, type FieldDef } from "@/lib/templates";
 import { toRoman } from "@/lib/doc-model";
 import { toggleColorMode } from "@/lib/theme-client";
 import { DownloadDialog } from "./DownloadDialog";
@@ -159,6 +159,32 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
     setDoc(tab, { content: emptyContent(template) });
     setNotice(`Prosit ${tab} réinitialisé. Ctrl+Z pour annuler.`);
   };
+
+  /** Ajoute au retour ce qui manque par rapport à l'aller (sans rien écraser). */
+  const syncFromAller = (auto = false) => {
+    const s = history.get();
+    const { content, added } = mergeAllerIntoRetour(s.docs.aller.content, s.docs.retour.content);
+    if (!added) {
+      if (!auto) setNotice("Le retour contient déjà tous les éléments de l’aller.");
+      return;
+    }
+    setDoc("retour", { content });
+    setNotice(
+      auto
+        ? "Le retour a été pré-rempli avec le contenu de l’aller : ajoute les définitions et les statuts des pistes (Ctrl+Z pour annuler)."
+        : `${added} élément(s) de l’aller ajouté(s) au retour (Ctrl+Z pour annuler).`,
+    );
+  };
+
+  // Premier passage sur un retour vide : on le pré-remplit avec l'aller.
+  const autoSynced = useRef(false);
+  useEffect(() => {
+    if (tab !== "retour" || autoSynced.current) return;
+    autoSynced.current = true;
+    const s = history.get();
+    if (isContentEmpty(s.docs.retour.content) && !isContentEmpty(s.docs.aller.content)) syncFromAller(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const switchTab = (t: DocType) => {
     setTab(t);
@@ -458,10 +484,16 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
             )}
           </section>
 
-          {tab === "retour" && template.sections.length === 1 && (
-            <p className="rounded-sm border border-dashed border-line bg-surface px-4 py-3 text-xs text-muted">
-              Les rubriques du prosit retour ne sont pas encore définies : un champ libre est utilisé en attendant.
-            </p>
+          {tab === "retour" && (
+            <div className="flex flex-wrap items-center gap-3 rounded-sm border border-dashed border-line bg-surface px-4 py-3 text-xs text-muted">
+              <p className="min-w-0 flex-1">
+                Le retour reprend les éléments de l’aller. Ajoute une <strong className="text-ink">définition</strong> sous chaque élément et un{" "}
+                <strong className="text-ink">statut</strong> à chaque piste de solution (vert = validée, orange = partielle, rouge = non validée).
+              </p>
+              <button className="btn text-xs" onClick={() => syncFromAller()} title="Ajoute au retour les éléments de l’aller qui manquent, sans rien effacer">
+                Reprendre depuis l’aller
+              </button>
+            </div>
           )}
 
           {template.sections.map((s, si) => {
@@ -550,6 +582,9 @@ function FieldEditor({ field, value, onChange }: { field: FieldDef; value: Conte
           style={field.style}
           placeholder={field.placeholder}
           onChange={onChange}
+          detailLabel={field.detail}
+          withStatus={field.status}
+          rich={field.rich}
         />
       )}
     </div>

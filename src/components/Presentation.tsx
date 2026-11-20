@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { buildDocModel, listMarker, numberItems, type Block } from "@/lib/doc-model";
 import { readableOn } from "@/lib/color";
 import { channelName, type PresentationMessage } from "@/lib/presentation";
+import { STATUS_META, type PisteStatus } from "@/lib/schema";
+
+/** Couleurs de statut éclaircies pour rester lisibles sur fond noir (projection). */
+const STATUS_ON_DARK: Record<PisteStatus, string> = { valid: "#4ADE80", partial: "#FBBF24", invalid: "#F87171" };
 import { IconExpand } from "./icons";
+import { BlocksView, Inline, KeywordTable } from "./RichView";
 
 type State = Extract<PresentationMessage, { kind: "state" }>;
 
@@ -101,7 +106,7 @@ export function Presentation({ prositId, initial, accent, secondary }: { prositI
                 {g.num && <span style={{ color: secondary }}>{g.num}</span>}
                 <span>{g.title}</span>
               </h2>
-              <div className="space-y-[0.3em] leading-snug">{g.blocks.map((b, k) => renderBlock(b, k, secondary))}</div>
+              <div className="space-y-[0.3em] leading-snug">{g.blocks.map((b, k) => renderBlock(b, k, secondary, accent))}</div>
             </section>
           );
         })}
@@ -110,12 +115,16 @@ export function Presentation({ prositId, initial, accent, secondary }: { prositI
   );
 }
 
-function renderBlock(b: Block, k: number, secondary: string) {
+function renderBlock(b: Block, k: number, secondary: string, accent: string) {
   switch (b.kind) {
     case "subheading":
       return <p key={k} className="mt-[0.4em] font-bold">{b.text}</p>;
     case "para":
-      return <p key={k}>{b.text}</p>;
+      return (
+        <p key={k} className="whitespace-pre-wrap">
+          <Inline text={b.text} />
+        </p>
+      );
     case "empty":
       return <p key={k} className="text-white/30">…</p>;
     case "roles":
@@ -129,6 +138,7 @@ function renderBlock(b: Block, k: number, secondary: string) {
         </ul>
       );
     case "list": {
+      if (b.asTable) return <KeywordTable key={k} items={b.items} headers={b.asTable} accent={accent} accentFg={readableOn(accent)} dark />;
       const nums = numberItems(b.items);
       return (
         <ul key={k}>
@@ -139,13 +149,35 @@ function renderBlock(b: Block, k: number, secondary: string) {
                 <span className={`shrink-0 font-bold ${m === "■" ? "text-[0.6em] leading-[2.4]" : ""}`} style={{ color: secondary }}>
                   {m}
                 </span>
-                <span className="min-w-0 break-words">{it.text}</span>
+                <div className="min-w-0 flex-1 break-words">
+                  <span className={it.detail || it.status || it.blocks ? "font-bold" : ""} style={it.status ? { color: STATUS_ON_DARK[it.status] } : undefined}>
+                    {it.status && `${STATUS_META[it.status].symbol} `}
+                    <Inline text={it.text} />
+                  </span>
+                  {it.detail && (
+                    <span className="whitespace-pre-wrap text-white/75">
+                      {" : "}
+                      <Inline text={it.detail} />
+                    </span>
+                  )}
+                  {it.blocks && <BlocksView blocks={it.blocks} dark />}
+                </div>
               </li>
             );
           })}
         </ul>
       );
     }
+    case "legend":
+      return (
+        <p key={k} className="flex flex-wrap gap-x-[1.2em] text-[0.75em] font-bold">
+          {(Object.keys(STATUS_META) as PisteStatus[]).map((st) => (
+            <span key={st} style={{ color: STATUS_ON_DARK[st] }}>
+              {STATUS_META[st].symbol} {STATUS_META[st].label}
+            </span>
+          ))}
+        </p>
+      );
     default:
       return null;
   }
