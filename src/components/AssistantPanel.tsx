@@ -1,8 +1,9 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
 import { api } from "@/lib/client-api";
 import { extractInsertable, INSERT_FENCE } from "@/lib/ai/insert";
+import { targetPatch, type AssistTarget } from "@/lib/ai/targets";
 import type { DocType } from "@/lib/schema";
 import { Inline } from "./RichView";
 import { IconCopy, IconLink, IconPlus, IconSend, IconSparkle, IconStop, IconTrash } from "./icons";
@@ -29,6 +30,13 @@ interface Msg {
   error?: string;
   /** Libellé court affiché à la place du prompt complet d'une action rapide. */
   label?: string;
+  /** Élément ou champ visé par un bouton de l'éditeur : la réponse peut lui être appliquée. */
+  target?: AssistTarget;
+}
+
+/** Ce que l'éditeur peut demander au panneau (boutons des éléments et des champs). */
+export interface AssistantApi {
+  ask: (prompt: string, label: string, target?: AssistTarget) => void;
 }
 interface LinkStatus {
   url: string;
@@ -47,13 +55,15 @@ interface Props {
   /** Enregistre les modifications en attente avant que le serveur relise le prosit. */
   beforeAsk: () => Promise<void>;
   onInsert: (field: FocusField, text: string, mode: "append" | "replace") => void;
+  onApply: (target: AssistTarget, patch: { text?: string; detail?: string }) => void;
+  apiRef: RefObject<AssistantApi | null>;
 }
 
 /**
  * Assistant de rédaction (Perplexity). Rien n'est envoyé tant que l'étudiant ne pose pas de question
  * ou ne clique pas sur une action ; le document entier et les liens d'aide sont joints à chaque demande.
  */
-export function AssistantPanel({ open, onClose, prositId, tab, initialLinks, focus, beforeAsk, onInsert }: Props) {
+export function AssistantPanel({ open, onClose, prositId, tab, initialLinks, focus, beforeAsk, onInsert, onApply, apiRef }: Props) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [links, setLinks] = useState<string[]>(initialLinks);
   const [linkInput, setLinkInput] = useState("");
@@ -110,10 +120,10 @@ export function AssistantPanel({ open, onClose, prositId, tab, initialLinks, foc
 
   // ---------- discussion ----------
 
-  async function ask(prompt: string, label?: string) {
+  async function ask(prompt: string, label?: string, target?: AssistTarget) {
     if (busy || !prompt.trim()) return;
     const history = messages.filter((m) => !m.error && m.content);
-    const next: Msg[] = [...messages, { role: "user", content: prompt.trim(), label }, { role: "assistant", content: "" }];
+    const next: Msg[] = [...messages, { role: "user", content: prompt.trim(), label }, { role: "assistant", content: "", target }];
     setMessages(next);
     setInput("");
     setBusy(true);
@@ -129,8 +139,8 @@ export function AssistantPanel({ open, onClose, prositId, tab, initialLinks, foc
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prositId,
-          type: tab,
-          focus: focus?.title,
+          type: target?.tab ?? tab,
+          focus: target?.section ?? focus?.title,
           messages: [...history.map((m) => ({ role: m.role, content: m.content })), { role: "user", content: prompt.trim() }],
         }),
       });
@@ -164,6 +174,11 @@ export function AssistantPanel({ open, onClose, prositId, tab, initialLinks, foc
       abort.current = null;
     }
   }
+
+  // L'éditeur appelle ask() depuis les boutons des éléments ; la référence suit le dernier rendu.
+  const askRef = useRef(ask);
+  askRef.current = ask;
+  useImperativeHandle(apiRef, () => ({ ask: (prompt, label, target) => askRef.current(prompt, label, target) }), []);
 
   const quick: { label: string; prompt: string }[] = [];
   if (focus) {
@@ -268,7 +283,7 @@ export function AssistantPanel({ open, onClose, prositId, tab, initialLinks, foc
               {m.label ?? m.content}
             </div>
           ) : (
-            <AssistantMessage key={i} msg={m} streaming={busy && i === messages.length - 1} focus={focus} onInsert={onInsert} />
+            <AssistantMessage key={i} msg={m} streaming={busy && i === messages.length - 1} focus={focus} onInsert={onInsert} onApply={onApply} />
           ),
         )}
       </div>
@@ -315,8 +330,22 @@ export function AssistantPanel({ open, onClose, prositId, tab, initialLinks, foc
   );
 }
 
-function AssistantMessage({ msg, streaming, focus, onInsert }: { msg: Msg; streaming: boolean; focus: FocusSection | null; onInsert: Props["onInsert"] }) {
-  const insertable = streaming ? null : extractInsertable(msg.content);
+function AssistantMessage({
+  msg,
+  streaming,
+  focus,
+  onInsert,
+  onApply,
+}: {
+  msg: Msg;
+  streaming: boolean;
+  focus: FocusSection | null;
+  onInsert: Props["onInsert"];
+  onApply: Props["onApply"];
+}) {
+  const patch = streaming || !msg.target ? null : targetPatch(msg.content);
+  const [applied, setApplied] = useState(false);
+  const insertable = streaming || msg.target ? null : extractInsertable(msg.content);
   const [field, setField] = useState(0);
   const [copied, setCopied] = useState(false);
   const target = focus?.fields[Math.min(field, focus.fields.length - 1)];
@@ -344,7 +373,7 @@ function AssistantMessage({ msg, streaming, focus, onInsert }: { msg: Msg; strea
           <button
             className="btn btn-ghost px-2 py-1 text-xs"
             onClick={() => {
-              navigator.clipboard.writeText(insertable ?? msg.content).then(() => {
+              navigator.clipboard.writeText(insertable ?? patch?.detail ?? patch?.text ?? msg.content).then(() => {
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
               });
@@ -352,6 +381,18 @@ function AssistantMessage({ msg, streaming, focus, onInsert }: { msg: Msg; strea
           >
             <IconCopy width={13} height={13} /> {copied ? "Copié" : "Copier"}
           </button>
+          {patch && msg.target && (
+            <button
+              className="btn btn-primary px-2 py-1 text-xs"
+              onClick={() => {
+                onApply(msg.target!, patch);
+                setApplied(true);
+              }}
+              title="Remplace le texte visé par la proposition (Ctrl+Z pour annuler)"
+            >
+              {applied ? "Appliqué ✓" : msg.target.kind === "item" ? "Appliquer à l’élément" : `Appliquer à « ${msg.target.fieldLabel} »`}
+            </button>
+          )}
           {insertable && target && (
             <>
               {focus!.fields.length > 1 && (
@@ -389,7 +430,7 @@ function Markdown({ text, sources }: { text: string; sources?: Source[] }) {
         const fence = p.match(/^```([^\n]*)\n([\s\S]*?)(?:```)?$/);
         if (fence)
           return (
-            <pre key={i} className={`overflow-x-auto whitespace-pre-wrap rounded-sm border px-3 py-2 font-sans text-[13px] ${fence[1].trim() === INSERT_FENCE ? "border-accent bg-accent/10" : "border-line bg-surface-2"}`}>
+            <pre key={i} className={`overflow-x-auto whitespace-pre-wrap rounded-sm border px-3 py-2 font-sans text-[13px] ${fence[1].trim().startsWith(INSERT_FENCE) ? "border-accent bg-accent/10" : "border-line bg-surface-2"}`}>
               {fence[2].trimEnd()}
             </pre>
           );

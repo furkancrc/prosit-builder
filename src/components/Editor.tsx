@@ -14,7 +14,9 @@ import { toRoman } from "@/lib/doc-model";
 import { textForTextField, textToListItems } from "@/lib/ai/insert";
 import { newItemId } from "@/lib/list-ops";
 import { toggleColorMode } from "@/lib/theme-client";
-import { AssistantPanel, type FocusField, type FocusSection } from "./AssistantPanel";
+import { AssistantPanel, type AssistantApi, type FocusField, type FocusSection } from "./AssistantPanel";
+import { AssistMenu } from "./AssistMenu";
+import { buildTargetPrompt, writeLabel, type AssistAction, type AssistTarget } from "@/lib/ai/targets";
 import { DownloadDialog } from "./DownloadDialog";
 import { HelpDialog, SECTION_KEYS } from "./HelpDialog";
 import { ListEditor } from "./ListEditor";
@@ -209,6 +211,37 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
     );
     return s && fields.length ? { title: s.title, fields } : null;
   }, [active, template]);
+
+  const assistantApi = useRef<AssistantApi | null>(null);
+
+  /** Bouton de l'assistant d'un élément ou d'un champ : ouvre le panneau et envoie la demande ciblée. */
+  const assistTarget = (target: AssistTarget, action: AssistAction) => {
+    const { prompt, label } = buildTargetPrompt(target, action);
+    setAssistantOpen(true);
+    assistantApi.current?.ask(prompt, label, target);
+  };
+
+  /** Applique la réponse de l'assistant à l'élément / au champ visé (annulable). */
+  const applyToTarget = (target: AssistTarget, patch: { text?: string; detail?: string }) => {
+    const content = history.get().docs[target.tab].content;
+    const current = content[target.fieldKey];
+    if (target.kind === "field") {
+      if (patch.text === undefined) return;
+      setDoc(target.tab, { content: { ...content, [target.fieldKey]: patch.text } });
+    } else {
+      if (!Array.isArray(current) || !current.some((i) => i.id === target.itemId)) {
+        setNotice("L’élément visé n’existe plus : copie la proposition à la main.");
+        return;
+      }
+      const next = current.map((i) =>
+        i.id === target.itemId
+          ? { ...i, ...(patch.text !== undefined ? { text: patch.text.replace(/\s*\n\s*/g, " ") } : {}), ...(patch.detail !== undefined ? { detail: patch.detail } : {}) }
+          : i,
+      );
+      setDoc(target.tab, { content: { ...content, [target.fieldKey]: next } });
+    }
+    setNotice(`Proposition appliquée à « ${target.kind === "item" ? target.text : target.fieldLabel} » (Ctrl+Z pour annuler).`);
+  };
 
   const insertFromAssistant = (field: FocusField, text: string, mode: "append" | "replace") => {
     const current = history.get().docs[tab].content[field.key];
@@ -566,7 +599,14 @@ ${add}` : add;
                 </h2>
                 <div className={isRoles ? "grid gap-3 sm:grid-cols-2" : "space-y-4"}>
                   {s.fields.map((f) => (
-                    <FieldEditor key={`${tab}:${f.key}`} field={f} value={doc.content[f.key]} onChange={(v) => setField(f.key, v)} />
+                    <FieldEditor
+                      key={`${tab}:${f.key}`}
+                      field={f}
+                      value={doc.content[f.key]}
+                      onChange={(v) => setField(f.key, v)}
+                      assistContext={{ tab, section: s.title }}
+                      onAssist={assistTarget}
+                    />
                   ))}
                 </div>
               </section>
@@ -600,6 +640,8 @@ ${add}` : add;
         focus={focus}
         beforeAsk={flush}
         onInsert={insertFromAssistant}
+        onApply={applyToTarget}
+        apiRef={assistantApi}
       />
 
       {download && (
@@ -610,7 +652,19 @@ ${add}` : add;
   );
 }
 
-function FieldEditor({ field, value, onChange }: { field: FieldDef; value: Content[string]; onChange: (v: Content[string]) => void }) {
+function FieldEditor({
+  field,
+  value,
+  onChange,
+  assistContext,
+  onAssist,
+}: {
+  field: FieldDef;
+  value: Content[string];
+  onChange: (v: Content[string]) => void;
+  assistContext: { tab: DocType; section: string };
+  onAssist: (target: AssistTarget, action: AssistAction) => void;
+}) {
   const id = `f-${field.key}`;
   if (field.kind === "role") {
     return (
@@ -628,14 +682,7 @@ function FieldEditor({ field, value, onChange }: { field: FieldDef; value: Conte
         </label>
       )}
       {field.kind === "text" ? (
-        <textarea
-          id={id}
-          className="field min-h-24 resize-y leading-relaxed"
-          value={typeof value === "string" ? value : ""}
-          placeholder={field.placeholder}
-          onChange={(e) => onChange(e.target.value)}
-          rows={field.key === "contenu" ? 16 : 4}
-        />
+        <TextFieldWithAssist field={field} id={id} value={typeof value === "string" ? value : ""} onChange={onChange} assistContext={assistContext} onAssist={onAssist} />
       ) : (
         <ListEditor
           label={field.label}
@@ -646,8 +693,53 @@ function FieldEditor({ field, value, onChange }: { field: FieldDef; value: Conte
           detailLabel={field.detail}
           withStatus={field.status}
           rich={field.rich}
+          onAssist={(item, action) =>
+            onAssist(
+              { kind: "item", ...assistContext, fieldKey: field.key, fieldLabel: field.label, itemId: item.id, text: item.text, detail: item.detail, detailLabel: field.detail },
+              action,
+            )
+          }
         />
       )}
+    </div>
+  );
+}
+
+function TextFieldWithAssist({
+  field,
+  id,
+  value,
+  onChange,
+  assistContext,
+  onAssist,
+}: {
+  field: FieldDef;
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  assistContext: { tab: DocType; section: string };
+  onAssist: (target: AssistTarget, action: AssistAction) => void;
+}) {
+  const target: AssistTarget = { kind: "field", ...assistContext, fieldKey: field.key, fieldLabel: field.label, text: value };
+  return (
+    <div className="relative">
+      <textarea
+        id={id}
+        className="field min-h-24 resize-y pr-9 leading-relaxed"
+        value={value}
+        placeholder={field.placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        rows={field.key === "contenu" ? 16 : 4}
+      />
+      <AssistMenu
+        className="absolute top-1 right-1"
+        title={`Assistant : corriger ou rédiger « ${field.label} »`}
+        items={[
+          { label: "Corriger les fautes", onSelect: () => onAssist(target, "fix"), disabled: !value.trim() },
+          { label: "Améliorer la rédaction", onSelect: () => onAssist(target, "improve"), disabled: !value.trim() },
+          { label: writeLabel(target), onSelect: () => onAssist(target, "write") },
+        ]}
+      />
     </div>
   );
 }

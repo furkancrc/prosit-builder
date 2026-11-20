@@ -109,3 +109,43 @@ describe("flux Perplexity", () => {
     expect(() => parseEvent({ type: "error", error: { message: "quota" } })).toThrow(/quota/);
   });
 });
+
+import { buildTargetPrompt, targetPatch, type AssistTarget } from "@/lib/ai/targets";
+import { extractFence } from "@/lib/ai/insert";
+
+describe("boutons assistant ciblés", () => {
+  const item: AssistTarget = {
+    kind: "item",
+    tab: "retour",
+    section: "Plan d’action",
+    fieldKey: "etude",
+    fieldLabel: "Études",
+    itemId: "x",
+    text: "Comprendre ce qu’est un S.I.",
+    detail: "un si c'est des machine",
+    detailLabel: "Ce qu’on a appris",
+  };
+
+  it("corriger un élément : demande le texte et la définition dans des blocs séparés", () => {
+    const { prompt, label } = buildTargetPrompt(item, "fix");
+    expect(label).toBe("Corriger les fautes · Comprendre ce qu’est un S.I.");
+    expect(prompt).toContain("```prosit-texte```");
+    expect(prompt).toContain("```prosit-detail```");
+    expect(prompt).toContain("« un si c'est des machine »");
+  });
+
+  it("rédiger la définition et rédiger un champ texte", () => {
+    expect(buildTargetPrompt(item, "write").label).toBe("Rédiger « Ce qu’on a appris » · Comprendre ce qu’est un S.I.");
+    const field: AssistTarget = { kind: "field", tab: "aller", section: "Contexte", fieldKey: "contexte", fieldLabel: "Contexte", text: "" };
+    const w = buildTargetPrompt(field, "write");
+    expect(w.label).toBe("Rédiger « Contexte » · Contexte");
+    expect(w.prompt).not.toContain("déjà écrit");
+  });
+
+  it("lit les blocs de la réponse sans confondre prosit et prosit-texte", () => {
+    const a = "Voilà :\n```prosit-texte\nComprendre ce qu’est un S.I. [1]\n```\n```prosit-detail\nUn SI est l’ensemble…\n```\n- accents";
+    expect(targetPatch(a)).toEqual({ text: "Comprendre ce qu’est un S.I.", detail: "Un SI est l’ensemble…" });
+    expect(extractFence(a, "prosit")).toBeNull();
+    expect(targetPatch("pas de bloc")).toBeNull();
+  });
+});

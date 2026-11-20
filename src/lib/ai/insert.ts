@@ -3,11 +3,17 @@ import { MAX_LEVEL, normalizeList, type ListItem } from "../schema";
 /** Langage du bloc de code dans lequel l'assistant met le contenu prêt à insérer. */
 export const INSERT_FENCE = "prosit";
 
-/** Contenu prêt à insérer : le dernier bloc ```prosit``` de la réponse, sinon null. */
-export function extractInsertable(answer: string): string | null {
-  const re = new RegExp("```" + INSERT_FENCE + "[^\\n]*\\n([\\s\\S]*?)```", "g");
+/** Contenu du dernier bloc de code ```<lang>``` de la réponse (langage exact), sinon null. */
+export function extractFence(answer: string, lang: string): string | null {
+  const re = new RegExp("```" + lang + "[ \\t]*\\r?\\n([\\s\\S]*?)```", "g");
   let last: string | null = null;
   for (const m of answer.matchAll(re)) last = m[1];
+  return last;
+}
+
+/** Contenu prêt à insérer : le dernier bloc ```prosit``` de la réponse, sinon null. */
+export function extractInsertable(answer: string): string | null {
+  const last = extractFence(answer, INSERT_FENCE);
   return last === null ? null : stripCitations(last).trim();
 }
 

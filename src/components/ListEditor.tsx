@@ -19,6 +19,8 @@ import { MAX_LEVEL, STATUS_META, normalizeList, type ListItem, type PisteStatus 
 import type { ListStyle } from "@/lib/templates";
 import { IconDown, IconGrip, IconIndent, IconOutdent, IconPlus, IconTrash, IconUp } from "./icons";
 import { RichBlocks, clipboardImages, imagesBlockFromFiles } from "./RichBlocks";
+import { AssistMenu } from "./AssistMenu";
+import type { AssistAction } from "@/lib/ai/targets";
 
 interface Props {
   items: ListItem[];
@@ -32,9 +34,11 @@ interface Props {
   withStatus?: boolean;
   /** Prosit retour : blocs riches (texte, images, tableaux) sous chaque élément. */
   rich?: boolean;
+  /** Bouton de l'assistant sur chaque élément (corriger, améliorer, rédiger la définition). */
+  onAssist?: (item: ListItem, action: AssistAction) => void;
 }
 
-export function ListEditor({ items, style, onChange, placeholder, label, detailLabel, withStatus, rich }: Props) {
+export function ListEditor({ items, style, onChange, placeholder, label, detailLabel, withStatus, rich, onAssist }: Props) {
   const [focusId, setFocusId] = useState<string | null>(null);
   const inputs = useRef(new Map<string, HTMLTextAreaElement>());
   const numbers = numberItems(items);
@@ -122,6 +126,7 @@ export function ListEditor({ items, style, onChange, placeholder, label, detailL
                 onUp={() => onChange(moveSibling(items, i, -1))}
                 onDown={() => onChange(moveSibling(items, i, 1))}
                 onDelete={() => remove(i)}
+                onAssist={onAssist && ((action) => onAssist(it, action))}
               />
             ))}
           </ol>
@@ -151,6 +156,7 @@ interface RowProps {
   onUp: () => void;
   onDown: () => void;
   onDelete: () => void;
+  onAssist?: (action: AssistAction) => void;
 }
 
 function Row(p: RowProps) {
@@ -223,6 +229,16 @@ function Row(p: RowProps) {
         className="field min-w-0 flex-1 resize-none overflow-hidden py-1.5 leading-snug"
       />
       <div className="mt-0.5 flex shrink-0 items-center opacity-100 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
+        {p.onAssist && (
+          <AssistMenu
+            title="Assistant : corriger ou rédiger cet élément"
+            items={[
+              { label: "Corriger les fautes", onSelect: () => p.onAssist!("fix"), disabled: !p.item.text.trim() },
+              { label: "Améliorer la rédaction", onSelect: () => p.onAssist!("improve"), disabled: !p.item.text.trim() },
+              ...(p.detailLabel ? [{ label: `Rédiger « ${p.detailLabel} »`, onSelect: () => p.onAssist!("write"), disabled: !p.item.text.trim() }] : []),
+            ]}
+          />
+        )}
         <IconBtn label="Désindenter (Maj+Tab)" onClick={p.onOutdent} disabled={!p.canOutdent}><IconOutdent /></IconBtn>
         <IconBtn label="Indenter (Tab)" onClick={p.onIndent} disabled={!p.canIndent}><IconIndent /></IconBtn>
         <IconBtn label="Monter (Alt+↑)" onClick={p.onUp} className="hidden sm:inline-flex"><IconUp /></IconBtn>
