@@ -29,6 +29,11 @@ Web app pour rédiger les **prosits aller / retour** du CESI et les exporter en 
 - Bouton thème clair/sombre dans l'en-tête, et lien vers le sujet du prosit (non exporté).
 - Téléchargement Word ou PDF, avec un nom de fichier prérempli à partir d'un gabarit et modifiable.
 - Réglages : auteur, classe, bloc, gabarit de nom, couleur d'accent, mode clair/sombre, police et couleur des titres du document.
+- **Assistant de rédaction IA** (Perplexity), uniquement à la demande : bouton « Assistant » dans l'éditeur.
+  - Il reçoit tout le prosit (et l'aller quand on est sur le retour), la rubrique en cours et le texte des **liens d'aide** enregistrés pour le prosit (cours, ressources données par l'école).
+  - Actions rapides : proposer du contenu pour la rubrique, la corriger, relire tout le prosit ; ou question libre.
+  - Le contenu proposé peut être ajouté à la rubrique, ou la remplacer, en un clic (Ctrl+Z pour annuler). Les sources web sont listées sous chaque réponse.
+  - Les pages privées (Moodle connecté) et les PDF ne peuvent pas être lus par le serveur : coller le texte utile dans la discussion.
 - Accès protégé par un mot de passe unique (`APP_PASSWORD`).
 
 Stack : Next.js 15 (App Router) · TypeScript · Tailwind 4 · `docx` · LibreOffice headless · SQLite (`better-sqlite3`) · zod · Vitest.
@@ -66,6 +71,8 @@ Sauvegarde : `docker compose cp prosit-builder:/data/prosit.db ./prosit-backup.d
 | `SESSION_SECRET` | oui (prod) | Secret HMAC du cookie de session, 32 caractères aléatoires ou plus. Le changer déconnecte toutes les sessions |
 | `DATA_DIR` | non | Dossier de la base SQLite (`/data` dans l'image) |
 | `SOFFICE_PATH` | non | Chemin de LibreOffice s'il n'est pas dans le `PATH` |
+| `PERPLEXITY_API_KEY` | non | Clé de l'API Perplexity pour l'assistant de rédaction |
+| `PERPLEXITY_MODEL` | non | Modèle de l'Agent API Perplexity (défaut `perplexity/sonar`) |
 | `COOKIE_SECURE` | non | `false` pour accepter le cookie en HTTP simple (test sans HTTPS) |
 
 ## Déployer sur Coolify

@@ -8,6 +8,9 @@ services:
       DATA_DIR: /data
       # Mettre à "false" uniquement pour tester en HTTP sans TLS (ex. http://localhost)
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      # Assistant IA (optionnel)
+      PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:-}
+      PERPLEXITY_MODEL: ${PERPLEXITY_MODEL:-}
     volumes:
       - prosit-data:/data
     expose:

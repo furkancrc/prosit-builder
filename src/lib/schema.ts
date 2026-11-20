@@ -73,6 +73,9 @@ export const MetaSchema = z.object({
 });
 export type Meta = z.infer<typeof MetaSchema>;
 export const MetaPatchSchema = MetaSchema.partial();
+
+/** Liens d'aide d'un prosit (cours, ressources Moodle…) lus par l'assistant IA. */
+export const HelpLinksSchema = z.array(z.string().trim().url().max(1000).regex(/^https?:\/\//i, "Lien http(s) attendu")).max(15);
 export type MetaPatch = z.infer<typeof MetaPatchSchema>;
 
 export const DOC_FONTS = ["Arial", "Calibri", "Times New Roman", "Cambria", "Courier New"] as const;

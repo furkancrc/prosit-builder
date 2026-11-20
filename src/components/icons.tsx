@@ -39,3 +39,6 @@ export const IconLink = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path
 export const IconPrev = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M19 12H5M11 18l-6-6 6-6" /></svg>);
 export const IconNext = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M5 12h14M13 6l6 6-6 6" /></svg>);
 export const IconExpand = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>);
+export const IconSparkle = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" /></svg>);
+export const IconSend = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M5 12h14M13 6l6 6-6 6" /></svg>);
+export const IconStop = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><rect x="6" y="6" width="12" height="12" rx="1" /></svg>);

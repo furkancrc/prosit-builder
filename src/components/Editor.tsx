@@ -11,7 +11,10 @@ import { channelName, type PresentationMessage } from "@/lib/presentation";
 import type { Content, DocType, ListItem, Meta, MetaPatch, Settings } from "@/lib/schema";
 import { coerceContent, emptyContent, getTemplate, isContentEmpty, mergeAllerIntoRetour, sectionNumbers, type FieldDef } from "@/lib/templates";
 import { toRoman } from "@/lib/doc-model";
+import { textForTextField, textToListItems } from "@/lib/ai/insert";
+import { newItemId } from "@/lib/list-ops";
 import { toggleColorMode } from "@/lib/theme-client";
+import { AssistantPanel, type FocusField, type FocusSection } from "./AssistantPanel";
 import { DownloadDialog } from "./DownloadDialog";
 import { HelpDialog, SECTION_KEYS } from "./HelpDialog";
 import { ListEditor } from "./ListEditor";
@@ -29,6 +32,7 @@ import {
   IconPresent,
   IconPrev,
   IconRedo,
+  IconSparkle,
   IconTrash,
   IconUndo,
   IconUpload,
@@ -63,11 +67,13 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
   const [metaOpen, setMetaOpen] = useState(true);
   const [download, setDownload] = useState<"docx" | "pdf" | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const sectionRefs = useRef<(HTMLElement | null)[]>([]);
   const previewRef = useRef<HTMLDivElement>(null);
+  const navLock = useRef(0);
 
   const history = useHistory<EditorState>(() => {
     const docs = {} as Record<DocType, DocState>;
@@ -193,6 +199,33 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
     router.replace(`?tab=${t}`, { scroll: false });
   };
 
+  // ---------- assistant IA ----------
+
+  /** Rubrique en cours, telle que vue par l'assistant (null pour l'en-tête et les rôles). */
+  const focus = useMemo<FocusSection | null>(() => {
+    const s = active > 0 ? template.sections[active - 1] : undefined;
+    const fields = (s?.fields ?? []).flatMap((f): FocusField[] =>
+      f.kind === "role" ? [] : [{ key: f.key, label: f.label, kind: f.kind, withDetail: f.kind === "list" && !!f.detail }],
+    );
+    return s && fields.length ? { title: s.title, fields } : null;
+  }, [active, template]);
+
+  const insertFromAssistant = (field: FocusField, text: string, mode: "append" | "replace") => {
+    const current = history.get().docs[tab].content[field.key];
+    let value: Content[string];
+    if (field.kind === "list") {
+      const items = textToListItems(text, { withDetail: field.withDetail, newId: newItemId });
+      const kept = mode === "append" && Array.isArray(current) ? current.filter((i) => i.text.trim() !== "") : [];
+      value = [...kept, ...items];
+    } else {
+      const add = textForTextField(text);
+      value = mode === "append" && typeof current === "string" && current.trim() ? `${current.trimEnd()}
+${add}` : add;
+    }
+    setDoc(tab, { content: { ...history.get().docs[tab].content, [field.key]: value } });
+    setNotice(`Proposition de l’assistant ${mode === "append" ? "ajoutée à" : "mise à la place de"} « ${field.label} » (Ctrl+Z pour annuler).`);
+  };
+
   // ---------- navigation entre rubriques ----------
 
   /** Fait défiler l'aperçu (colonne de droite, défilable en grand écran) jusqu'à la rubrique idx. */
@@ -210,6 +243,8 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
       setMobileView("form");
       if (idx === 0) setMetaOpen(true);
       setActive(idx);
+      // Pendant le défilement animé, le suivi au scroll ne doit pas remplacer la rubrique choisie.
+      navLock.current = Date.now() + 900;
       // setTimeout (et non requestAnimationFrame) : laisse React afficher l'en-tête déplié avant de viser le champ
       setTimeout(() => {
         const el = sectionRefs.current[idx];
@@ -229,6 +264,7 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
       (entries) => {
         // Si l'utilisateur écrit dans une rubrique, c'est elle qui reste active (suivie via onFocusCapture).
         if (document.activeElement?.closest("[data-nav]")) return;
+        if (Date.now() < navLock.current) return;
         const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
         const i = visible ? Number((visible.target as HTMLElement).dataset.nav) : NaN;
         if (!Number.isNaN(i)) setActive(i);
@@ -388,6 +424,9 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
             </button>
           </div>
           <div className="flex w-full gap-2 sm:w-auto">
+            <button className={`btn ${assistantOpen ? "border-ink" : ""}`} onClick={() => setAssistantOpen((o) => !o)} title="Assistant de rédaction (Perplexity)" aria-pressed={assistantOpen}>
+              <IconSparkle /> <span className="hidden md:inline">Assistant</span>
+            </button>
             <button className="btn" onClick={openPresentation} title="Ouvrir la vue à projeter">
               <IconPresent /> <span className="hidden md:inline">Présentation</span>
             </button>
@@ -551,6 +590,17 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
           </div>
         </div>
       </div>
+
+      <AssistantPanel
+        open={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        prositId={prositId}
+        tab={tab}
+        initialLinks={initialProsit.liensAide}
+        focus={focus}
+        beforeAsk={flush}
+        onInsert={insertFromAssistant}
+      />
 
       {download && (
         <DownloadDialog open format={download} defaultName={filename} documentId={doc.id} beforeDownload={flush} onClose={() => setDownload(null)} />

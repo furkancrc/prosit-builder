@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import {
   ContentSchema,
   DEFAULT_SETTINGS,
+  HelpLinksSchema,
   MetaPatchSchema,
   SettingsSchema,
   type Content,
@@ -79,6 +80,12 @@ function migrate(db: Database.Database) {
       PRAGMA user_version = 3;
     `);
   }
+  if (version < 4) {
+    db.exec(`
+      ALTER TABLE prosits ADD COLUMN liens_aide TEXT NOT NULL DEFAULT '[]';
+      PRAGMA user_version = 4;
+    `);
+  }
 }
 
 // Réinitialisé à chaque (re)chargement du module : en dev, la connexion mise en cache
@@ -117,6 +124,8 @@ export function saveSettings(s: Settings): Settings {
 
 export interface PrositRow extends Meta {
   id: string;
+  /** Liens d'aide donnés par l'école, passés en contexte à l'assistant IA (non exportés). */
+  liensAide: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -130,14 +139,28 @@ export interface DocumentRow {
   updatedAt: string;
 }
 
-const PROSIT_COLS = "id, nom, theme, numero, bloc, date, auteur, groupe, lien, created_at AS createdAt, updated_at AS updatedAt";
+const PROSIT_COLS = "id, nom, theme, numero, bloc, date, auteur, groupe, lien, liens_aide AS liensAide, created_at AS createdAt, updated_at AS updatedAt";
+
+type RawProsit = Omit<PrositRow, "liensAide"> & { liensAide: string };
+
+function rowToProsit(r: RawProsit): PrositRow {
+  const links = HelpLinksSchema.safeParse(JSON.parse(r.liensAide || "[]"));
+  return { ...r, liensAide: links.success ? links.data : [] };
+}
 
 export function listProsits(): PrositRow[] {
-  return db().prepare(`SELECT ${PROSIT_COLS} FROM prosits ORDER BY updated_at DESC`).all() as PrositRow[];
+  return (db().prepare(`SELECT ${PROSIT_COLS} FROM prosits ORDER BY updated_at DESC`).all() as RawProsit[]).map(rowToProsit);
 }
 
 export function getProsit(id: string): PrositRow | undefined {
-  return db().prepare(`SELECT ${PROSIT_COLS} FROM prosits WHERE id = ?`).get(id) as PrositRow | undefined;
+  const r = db().prepare(`SELECT ${PROSIT_COLS} FROM prosits WHERE id = ?`).get(id) as RawProsit | undefined;
+  return r && rowToProsit(r);
+}
+
+export function setHelpLinks(id: string, links: string[]): string[] | undefined {
+  const clean = HelpLinksSchema.parse(links);
+  const changes = db().prepare("UPDATE prosits SET liens_aide = ? WHERE id = ?").run(JSON.stringify(clean), id).changes;
+  return changes ? clean : undefined;
 }
 
 function rowToDoc(r: { id: string; prosit_id: string; type: DocType; meta_overrides: string; content: string; updated_at: string }): DocumentRow {
@@ -216,6 +239,7 @@ export function duplicateProsit(id: string): string | undefined {
     { nom: `${p.nom} (copie)`, theme: p.theme, numero: p.numero, bloc: p.bloc, date: p.date, auteur: p.auteur, groupe: p.groupe, lien: p.lien },
     Object.fromEntries(docs.map((d) => [d.type, d.content])),
   );
+  setHelpLinks(newId, p.liensAide);
   for (const d of docs) {
     if (Object.keys(d.metaOverrides).length) {
       db().prepare("UPDATE documents SET meta_overrides = ? WHERE prosit_id = ? AND type = ?").run(JSON.stringify(d.metaOverrides), newId, d.type);
