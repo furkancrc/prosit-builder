@@ -74,6 +74,16 @@ export const MetaSchema = z.object({
 export type Meta = z.infer<typeof MetaSchema>;
 export const MetaPatchSchema = MetaSchema.partial();
 
+const isoDate = z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date AAAA-MM-JJ attendue")]);
+
+/** Matière (bloc de formation) d'une année : nom et dates facultatives. */
+export const MatiereSchema = z.object({
+  anneeId: z.string().min(1).max(64),
+  nom: z.string().trim().min(1).max(150),
+  debut: isoDate.optional(),
+  fin: isoDate.optional(),
+});
+
 /** Liens d'aide d'un prosit (cours, ressources Moodle…) lus par l'assistant IA. */
 export const HelpLinksSchema = z.array(z.string().trim().url().max(1000).regex(/^https?:\/\//i, "Lien http(s) attendu")).max(15);
 export type MetaPatch = z.infer<typeof MetaPatchSchema>;

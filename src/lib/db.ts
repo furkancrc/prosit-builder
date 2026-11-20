@@ -86,6 +86,49 @@ function migrate(db: Database.Database) {
       PRAGMA user_version = 4;
     `);
   }
+  if (version < 5) {
+    // Dossiers : une année (FISA A3, A4, A5…) contient des matières (blocs de formation), qui contiennent les prosits.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS annees (
+        id TEXT PRIMARY KEY,
+        nom TEXT NOT NULL,
+        ordre INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS matieres (
+        id TEXT PRIMARY KEY,
+        annee_id TEXT NOT NULL REFERENCES annees(id) ON DELETE CASCADE,
+        nom TEXT NOT NULL,
+        debut TEXT NOT NULL DEFAULT '',
+        fin TEXT NOT NULL DEFAULT '',
+        ordre INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+      ALTER TABLE prosits ADD COLUMN matiere_id TEXT REFERENCES matieres(id) ON DELETE SET NULL;
+      PRAGMA user_version = 5;
+    `);
+    seedDossiers(db);
+  }
+}
+
+/** Années FISA A3 à A5, et les blocs de formation de l'A3 (calendrier 2026-27). */
+function seedDossiers(db: Database.Database) {
+  const count = (db.prepare("SELECT COUNT(*) AS n FROM annees").get() as { n: number }).n;
+  if (count) return;
+  const t = now();
+  const addYear = db.prepare("INSERT INTO annees (id, nom, ordre, created_at) VALUES (?, ?, ?, ?)");
+  const addMatiere = db.prepare("INSERT INTO matieres (id, annee_id, nom, debut, fin, ordre, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+  const a3 = randomUUID();
+  addYear.run(a3, "FISA A3", 3, t);
+  addYear.run(randomUUID(), "FISA A4", 4, t);
+  addYear.run(randomUUID(), "FISA A5", 5, t);
+  const blocs: [string, string, string][] = [
+    ["S.I - Sécurité et administration", "2026-11-16", "2026-12-18"],
+    ["Génie logiciel", "2027-01-25", "2027-02-26"],
+    ["Recherche opérationnelle", "2027-04-12", "2027-05-05"],
+    ["Développement d'applications distribuées", "2027-05-31", "2027-06-24"],
+  ];
+  blocs.forEach(([nom, debut, fin], i) => addMatiere.run(randomUUID(), a3, nom, debut, fin, i, t));
 }
 
 // Réinitialisé à chaque (re)chargement du module : en dev, la connexion mise en cache
@@ -126,6 +169,8 @@ export interface PrositRow extends Meta {
   id: string;
   /** Liens d'aide donnés par l'école, passés en contexte à l'assistant IA (non exportés). */
   liensAide: string[];
+  /** Matière (bloc de formation) qui range le prosit ; null = non classé. */
+  matiereId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -139,7 +184,7 @@ export interface DocumentRow {
   updatedAt: string;
 }
 
-const PROSIT_COLS = "id, nom, theme, numero, bloc, date, auteur, groupe, lien, liens_aide AS liensAide, created_at AS createdAt, updated_at AS updatedAt";
+const PROSIT_COLS = "id, nom, theme, numero, bloc, date, auteur, groupe, lien, liens_aide AS liensAide, matiere_id AS matiereId, created_at AS createdAt, updated_at AS updatedAt";
 
 type RawProsit = Omit<PrositRow, "liensAide"> & { liensAide: string };
 
@@ -186,26 +231,31 @@ export function getDocument(id: string): DocumentRow | undefined {
   return r && rowToDoc(r);
 }
 
-export function createProsit(meta: Partial<Meta>, contents?: Partial<Record<DocType, Content>>): string {
+export function createProsit(meta: Partial<Meta>, contents?: Partial<Record<DocType, Content>>, matiereId?: string | null): string {
   const s = getSettings();
   const id = randomUUID();
   const t = now();
+  // Créé dans une matière : le bloc et le groupe du document en sont déduits.
+  const place = matiereId
+    ? (db().prepare("SELECT m.nom AS bloc, a.nom AS groupe FROM matieres m JOIN annees a ON a.id = m.annee_id WHERE m.id = ?").get(matiereId) as { bloc: string; groupe: string } | undefined)
+    : undefined;
+  if (matiereId && !place) throw new UnknownMatiereError();
   const m: Meta = {
     nom: meta.nom ?? "Nouveau prosit",
     theme: meta.theme ?? "",
     numero: meta.numero ?? "",
-    bloc: meta.bloc ?? s.bloc,
+    bloc: meta.bloc ?? place?.bloc ?? s.bloc,
     date: meta.date ?? t.slice(0, 10),
     auteur: meta.auteur ?? s.auteur,
-    groupe: meta.groupe ?? s.groupe,
+    groupe: meta.groupe ?? place?.groupe ?? s.groupe,
     lien: meta.lien ?? "",
   };
   const tx = db().transaction(() => {
     db()
       .prepare(
-        "INSERT INTO prosits (id, nom, theme, numero, bloc, date, auteur, groupe, lien, created_at, updated_at) VALUES (@id, @nom, @theme, @numero, @bloc, @date, @auteur, @groupe, @lien, @t, @t)",
+        "INSERT INTO prosits (id, nom, theme, numero, bloc, date, auteur, groupe, lien, matiere_id, created_at, updated_at) VALUES (@id, @nom, @theme, @numero, @bloc, @date, @auteur, @groupe, @lien, @matiereId, @t, @t)",
       )
-      .run({ id, ...m, t });
+      .run({ id, ...m, matiereId: matiereId ?? null, t });
     for (const type of ["aller", "retour"] as const) {
       db()
         .prepare("INSERT INTO documents (id, prosit_id, type, meta_overrides, content, updated_at) VALUES (?, ?, ?, '{}', ?, ?)")
@@ -240,6 +290,7 @@ export function duplicateProsit(id: string): string | undefined {
     Object.fromEntries(docs.map((d) => [d.type, d.content])),
   );
   setHelpLinks(newId, p.liensAide);
+  setPrositMatiere(newId, p.matiereId);
   for (const d of docs) {
     if (Object.keys(d.metaOverrides).length) {
       db().prepare("UPDATE documents SET meta_overrides = ? WHERE prosit_id = ? AND type = ?").run(JSON.stringify(d.metaOverrides), newId, d.type);
@@ -260,4 +311,79 @@ export function updateDocument(id: string, patch: { content?: Content; metaOverr
   });
   tx();
   return getDocument(id);
+}
+
+// ---------- Dossiers : années et matières ----------
+
+export class UnknownMatiereError extends Error {
+  constructor() {
+    super("Matière introuvable");
+  }
+}
+
+export interface MatiereRow {
+  id: string;
+  anneeId: string;
+  nom: string;
+  /** Dates du bloc (AAAA-MM-JJ), facultatives. */
+  debut: string;
+  fin: string;
+  ordre: number;
+}
+
+export interface AnneeRow {
+  id: string;
+  nom: string;
+  ordre: number;
+  matieres: MatiereRow[];
+}
+
+export function listDossiers(): AnneeRow[] {
+  const annees = db().prepare("SELECT id, nom, ordre FROM annees ORDER BY ordre, created_at").all() as Omit<AnneeRow, "matieres">[];
+  const matieres = db()
+    .prepare("SELECT id, annee_id AS anneeId, nom, debut, fin, ordre FROM matieres ORDER BY ordre, debut, created_at")
+    .all() as MatiereRow[];
+  return annees.map((a) => ({ ...a, matieres: matieres.filter((m) => m.anneeId === a.id) }));
+}
+
+export function createAnnee(nom: string): string {
+  const id = randomUUID();
+  const max = (db().prepare("SELECT COALESCE(MAX(ordre), 0) AS m FROM annees").get() as { m: number }).m;
+  db().prepare("INSERT INTO annees (id, nom, ordre, created_at) VALUES (?, ?, ?, ?)").run(id, nom, max + 1, now());
+  return id;
+}
+
+export function renameAnnee(id: string, nom: string): boolean {
+  return db().prepare("UPDATE annees SET nom = ? WHERE id = ?").run(nom, id).changes > 0;
+}
+
+/** Supprime l'année et ses matières ; les prosits qu'elles contenaient deviennent « non classés ». */
+export function deleteAnnee(id: string): boolean {
+  return db().prepare("DELETE FROM annees WHERE id = ?").run(id).changes > 0;
+}
+
+export function createMatiere(anneeId: string, m: { nom: string; debut?: string; fin?: string }): string | undefined {
+  if (!db().prepare("SELECT 1 FROM annees WHERE id = ?").get(anneeId)) return undefined;
+  const id = randomUUID();
+  const max = (db().prepare("SELECT COALESCE(MAX(ordre), -1) AS m FROM matieres WHERE annee_id = ?").get(anneeId) as { m: number }).m;
+  db()
+    .prepare("INSERT INTO matieres (id, annee_id, nom, debut, fin, ordre, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(id, anneeId, m.nom, m.debut ?? "", m.fin ?? "", max + 1, now());
+  return id;
+}
+
+export function updateMatiere(id: string, patch: { nom?: string; debut?: string; fin?: string }): boolean {
+  const keys = (["nom", "debut", "fin"] as const).filter((k) => patch[k] !== undefined);
+  if (!keys.length) return !!db().prepare("SELECT 1 FROM matieres WHERE id = ?").get(id);
+  return db().prepare(`UPDATE matieres SET ${keys.map((k) => `${k} = @${k}`).join(", ")} WHERE id = @id`).run({ ...patch, id }).changes > 0;
+}
+
+export function deleteMatiere(id: string): boolean {
+  return db().prepare("DELETE FROM matieres WHERE id = ?").run(id).changes > 0;
+}
+
+/** Range un prosit dans une matière (null = non classé). */
+export function setPrositMatiere(id: string, matiereId: string | null): boolean {
+  if (matiereId && !db().prepare("SELECT 1 FROM matieres WHERE id = ?").get(matiereId)) throw new UnknownMatiereError();
+  return db().prepare("UPDATE prosits SET matiere_id = ? WHERE id = ?").run(matiereId, id).changes > 0;
 }
