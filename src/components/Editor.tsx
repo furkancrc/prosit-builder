@@ -67,6 +67,7 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
   const [active, setActive] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const sectionRefs = useRef<(HTMLElement | null)[]>([]);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const history = useHistory<EditorState>(() => {
     const docs = {} as Record<DocType, DocState>;
@@ -194,6 +195,15 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
 
   // ---------- navigation entre rubriques ----------
 
+  /** Fait défiler l'aperçu (colonne de droite, défilable en grand écran) jusqu'à la rubrique idx. */
+  const scrollPreviewTo = (idx: number) => {
+    const box = previewRef.current;
+    if (!box || box.scrollHeight <= box.clientHeight) return; // aperçu masqué ou non défilable (mobile)
+    const target = idx === 0 ? null : box.querySelector<HTMLElement>(`[data-preview-nav="${idx}"]`);
+    const top = target ? target.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 12 : 0;
+    box.scrollTo({ top, behavior: "smooth" });
+  };
+
   const goTo = useCallback(
     (i: number) => {
       const idx = Math.max(0, Math.min(navItems.length - 1, i));
@@ -206,6 +216,7 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
         if (!el) return;
         el.scrollIntoView({ behavior: "smooth", block: "start" });
         el.querySelector<HTMLElement>("input, textarea")?.focus({ preventScroll: true });
+        scrollPreviewTo(idx);
       }, 0);
     },
     [navItems.length],
@@ -532,7 +543,7 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
 
         {/* Aperçu */}
         <div className={`${mobileView === "form" ? "hidden lg:block" : ""}`}>
-          <div className="lg:sticky lg:top-[11.5rem] lg:max-h-[calc(100dvh-12.5rem)] lg:overflow-auto xl:top-[10.5rem] xl:max-h-[calc(100dvh-11.5rem)]">
+          <div ref={previewRef} className="lg:sticky lg:top-[11.5rem] lg:max-h-[calc(100dvh-12.5rem)] lg:overflow-auto xl:top-[10.5rem] xl:max-h-[calc(100dvh-11.5rem)]">
             <p className="mb-2 text-xs text-muted">
               Aperçu · <code>{filename}.docx</code>
             </p>

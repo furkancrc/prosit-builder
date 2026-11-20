@@ -18,6 +18,8 @@ export function Preview({ meta, type, content, settings }: { meta: Meta; type: D
   const model = buildDocModel(meta, type, content);
   const accent = settings.accentColor;
   const pink = settings.docSecondaryColor;
+  // Le n-ième bloc « section » correspond à la n-ième rubrique du gabarit, soit l'entrée n+1 de la navigation (0 = en-tête).
+  let sectionIdx = 0;
 
   return (
     <div className="paper mx-auto w-full max-w-[210mm] px-[7%] pt-[5%] pb-[7%] text-[10.5pt] leading-[1.35]" style={{ fontFamily: FONT_STACK[settings.docFont] }}>
@@ -37,7 +39,7 @@ export function Preview({ meta, type, content, settings }: { meta: Meta; type: D
         switch (b.kind) {
           case "section":
             return (
-              <div key={k} className="mt-[12pt] mb-[4pt] flex items-stretch">
+              <div key={k} data-preview-nav={++sectionIdx} className="mt-[12pt] mb-[4pt] flex items-stretch">
                 <span className="w-[17pt] shrink-0" style={{ background: accent }} />
                 <h2 className="flex-1 border-b border-black py-[3pt] pl-[8pt] text-[13pt] font-bold sm:text-[15pt]">
                   {b.num && <span style={{ color: pink }}>{b.num} </span>}
