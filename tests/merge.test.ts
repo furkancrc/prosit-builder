@@ -95,3 +95,63 @@ describe("sections du retour", () => {
     expect(t.slice(-2)).toEqual(["IX QUESTIONS DU TUTEUR", "X SOURCES"]);
   });
 });
+
+import { mergeImported, retourToAller } from "@/lib/templates";
+import { importFromXml } from "@/lib/docx/import";
+
+describe("import intelligent (fusion, jamais de remplacement)", () => {
+  const existing: Content = {
+    contexte: "Emma est stagiaire chez OPTIMAL.",
+    probleme: "Comment analyser les données ?",
+    motsInconnus: [li("CPU", { detail: "Processeur" }), li("Mémoire"), li("Python")],
+    pistes: [li("Calculer la moyenne", { status: "valid" })],
+  };
+
+  it("ne perd rien de l'existant et complète avec le fichier", () => {
+    const imported: Content = {
+      contexte: "",
+      probleme: "Une autre problématique formulée autrement",
+      motsInconnus: [li("cpu", { detail: "Unité centrale" }), li("Mémoire", { detail: "RAM" }), li("Trafic réseau", { detail: "Débit" })],
+      pistes: [li("Calculer la moyenne", { status: "partial", detail: "Fait en TP" }), li("Visualiser les données", { status: "invalid" })],
+    };
+    const { content, stats } = mergeImported("retour", existing, imported);
+    expect(content.contexte).toBe("Emma est stagiaire chez OPTIMAL."); // vide dans le fichier → gardé
+    expect(content.probleme).toBe("Comment analyser les données ?"); // différent → l'existant est gardé
+    expect(stats.kept).toEqual(["Problématique"]);
+    const mots = content.motsInconnus as ListItem[];
+    expect(mots.map((m) => [m.text, m.detail])).toEqual([
+      ["CPU", "Processeur"], // définition existante conservée
+      ["Mémoire", "RAM"], // définition ajoutée
+      ["Trafic réseau", "Débit"], // nouvel élément inséré après « Mémoire »
+      ["Python", undefined],
+    ]);
+    const pistes = content.pistes as ListItem[];
+    expect(pistes[0]).toMatchObject({ status: "valid", detail: "Fait en TP" }); // statut existant gardé, justification ajoutée
+    expect(pistes[1]).toMatchObject({ text: "Visualiser les données", status: "invalid" });
+    expect(stats.added).toBe(2);
+    expect(stats.enriched).toBe(2);
+  });
+
+  it("prend la version la plus complète d'un même texte", () => {
+    const { content, stats } = mergeImported("aller", { contexte: "Emma est stagiaire." }, { contexte: "Emma est stagiaire. Elle doit analyser 24 h de données." });
+    expect(content.contexte).toBe("Emma est stagiaire. Elle doit analyser 24 h de données.");
+    expect(stats.enriched).toBe(1);
+  });
+
+  it("reconstitue un aller à partir d'un retour (sans définitions ni statuts)", () => {
+    const a = retourToAller({ contexte: "C", pistes: [li("P", { status: "valid", detail: "d", blocks: [{ id: "t", type: "text", text: "x" }] })], questions: [li("Q")] });
+    expect(a.contexte).toBe("C");
+    expect(a.pistes).toEqual([{ id: expect.any(String), text: "P", level: 0 }]);
+    expect(a.questions).toBeUndefined(); // rubrique propre au retour
+  });
+
+  it("le type lu dans le fichier l'emporte sur l'onglet ouvert", () => {
+    const p = (t: string) => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`;
+    const retourXml = `<w:document><w:body>${p("PROSIT RETOUR / CER")}${p("I MOTS CLÉS")}${p("■ CPU : processeur")}</w:body></w:document>`;
+    expect(importFromXml(retourXml, "aller").type).toBe("retour");
+    const aavXml = `<w:document><w:body>${p("Mots clés :")}${p("XI AAV")}${p("[3] Schématiser")}</w:body></w:document>`;
+    expect(importFromXml(aavXml, "aller").type).toBe("retour");
+    const neutre = `<w:document><w:body>${p("Contexte")}${p("Texte")}</w:body></w:document>`;
+    expect(importFromXml(neutre, "retour").type).toBe("retour"); // aucun indice dans le fichier → onglet
+  });
+});

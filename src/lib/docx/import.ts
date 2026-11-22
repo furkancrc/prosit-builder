@@ -162,7 +162,8 @@ export function importFromXml(
   }
   const flat = nodes.flatMap((n) => (n.kind === "p" ? [n] : n.paras));
   const meta: MetaPatch = {};
-  let type: DocType | null = forceType ?? null;
+  // Le type lu dans le fichier l'emporte ; `forceType` (onglet ouvert, nom du fichier) n'est qu'un indice
+  let type: DocType | null = null;
 
   // Type, numéro et thème
   for (const p of flat.slice(0, 14)) {
@@ -177,6 +178,9 @@ export function importFromXml(
     const pbl = /^boucle\s+pbl(?:\s*\d+)?\s*:\s*(.+)$/i.exec(p.text);
     if (pbl && !meta.theme) meta.theme = pbl[1].trim();
   }
+  // rubriques qui n'existent que dans un retour / CER
+  if (!type && flat.some((p) => p.text.length < 60 && /^(?:[ivxlc]+)?(aav$|questionsdututeur|questiond|objectifsdapprentissage)/.test(normKey(p.text)))) type = "retour";
+  type = type ?? forceType ?? null;
 
   const tpl = getTemplate(type ?? "aller");
   const headings = new Map<string, Target>();

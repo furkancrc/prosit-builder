@@ -239,7 +239,8 @@ export function mergeAllerIntoRetour(aller: Content, retour: Content): { content
         added++;
       }
     } else if (Array.isArray(a) && Array.isArray(r)) {
-      const { items, added: n } = mergeLists(a, r);
+      // le retour prime : les éléments de l'aller ne font que combler ce qui manque
+      const { items, added: n } = mergeLists(a, r, false);
       if (n) {
         out[f.key] = items;
         added += n;
@@ -284,25 +285,112 @@ export function sameItem(a: string, b: string): boolean {
  * définitions, statuts, images…) sont gardés tels quels ; chaque élément de l'aller absent
  * du retour est inséré juste après l'élément qui le précédait dans l'aller, pour garder l'ordre.
  */
-function mergeLists(aller: ListItem[], retour: ListItem[]): { items: ListItem[]; added: number } {
-  const items = retour.filter((i) => i.text.trim() || i.detail?.trim() || i.blocks?.length);
+function mergeLists(incoming: ListItem[], base: ListItem[], enrich = true): { items: ListItem[]; added: number; enriched: number } {
+  const items = base.filter((i) => i.text.trim() || i.detail?.trim() || i.blocks?.length).map((i) => ({ ...i }));
   let added = 0;
-  let cursor = -1; // position (dans items) du dernier élément de l'aller retrouvé ou inséré
-  for (const a of aller) {
+  let enriched = 0;
+  let cursor = -1; // position (dans items) du dernier élément entrant retrouvé ou inséré
+  for (const a of incoming) {
     if (!a.text.trim()) continue;
     const found = items.findIndex((r) => sameItem(r.text, a.text));
+    if (found >= 0 && !enrich) {
+      cursor = found;
+      continue;
+    }
     if (found >= 0) {
+      // élément déjà présent : on le complète sans rien écraser
+      const r = items[found];
+      let changed = false;
+      if (a.detail?.trim() && (!r.detail?.trim() || moreComplete(a.detail, r.detail))) {
+        r.detail = a.detail;
+        changed = true;
+      }
+      if (a.status && !r.status) {
+        r.status = a.status;
+        changed = true;
+      }
+      if (a.blocks?.length && !r.blocks?.length) {
+        r.blocks = a.blocks;
+        changed = true;
+      }
+      if (moreComplete(a.text, r.text)) {
+        r.text = a.text;
+        changed = true;
+      }
+      if (changed) enriched++;
       cursor = found;
       continue;
     }
     // insérer après le curseur, et après les sous-éléments de l'élément qui s'y trouve
     let at = cursor + 1;
     if (cursor >= 0) while (at < items.length && items[at].level > items[cursor].level) at++;
-    items.splice(at, 0, { id: `${a.id}-r`, text: a.text, level: a.level });
+    items.splice(at, 0, { ...a, id: `${a.id}-m` });
     cursor = at;
     added++;
   }
-  return { items: normalizeList(items), added };
+  return { items: normalizeList(items), added, enriched };
+}
+
+/** `a` reprend tout `b` et en dit davantage (même texte, plus complet) ? */
+function moreComplete(a: string, b: string): boolean {
+  const ka = textKey(a);
+  const kb = textKey(b);
+  return ka.length > kb.length + 2 && ka.includes(kb);
+}
+
+/** Meilleur texte entre l'existant et l'importé : le vide cède, le plus complet l'emporte, sinon l'existant est gardé. */
+function chooseText(existing: string, incoming: string): { value: string; outcome: "same" | "filled" | "improved" | "kept" } {
+  if (!incoming.trim() || textKey(incoming) === textKey(existing)) return { value: existing, outcome: "same" };
+  if (!existing.trim()) return { value: incoming, outcome: "filled" };
+  if (moreComplete(incoming, existing)) return { value: incoming, outcome: "improved" };
+  return { value: existing, outcome: "kept" };
+}
+
+export interface ImportMergeStats {
+  /** Champs vides remplis + éléments de liste ajoutés. */
+  added: number;
+  /** Éléments ou textes existants complétés (définition, statut, images, version plus complète). */
+  enriched: number;
+  /** Champs gardés tels quels car le fichier contenait une version différente. */
+  kept: string[];
+}
+
+/**
+ * Fusionne le contenu d'un fichier importé dans un prosit existant, sans rien perdre :
+ * un champ vide est rempli, un texte existant n'est remplacé que par une version plus complète
+ * du même texte, les éléments de liste déjà présents sont complétés et les nouveaux insérés à leur place.
+ */
+export function mergeImported(type: DocType, existing: Content, imported: Content): { content: Content; stats: ImportMergeStats } {
+  const tpl = getTemplate(type);
+  const out = coerceContent(tpl, existing);
+  const inc = coerceContent(tpl, imported);
+  const stats: ImportMergeStats = { added: 0, enriched: 0, kept: [] };
+  for (const f of allFields(tpl)) {
+    const a = inc[f.key];
+    const r = out[f.key];
+    if (typeof a === "string" && typeof r === "string") {
+      const { value, outcome } = chooseText(r, a);
+      out[f.key] = value;
+      if (outcome === "filled") stats.added++;
+      if (outcome === "improved") stats.enriched++;
+      if (outcome === "kept") stats.kept.push(f.label);
+    } else if (Array.isArray(a) && Array.isArray(r)) {
+      const { items, added, enriched } = mergeLists(a, r);
+      out[f.key] = items;
+      stats.added += added;
+      stats.enriched += enriched;
+    }
+  }
+  return { content: out, stats };
+}
+
+/** Partie « aller » d'un contenu de retour : mêmes éléments, sans définitions, statuts ni images. */
+export function retourToAller(retour: Content): Content {
+  const c = coerceContent(ALLER_TEMPLATE, retour);
+  for (const [k, v] of Object.entries(c)) {
+    if (Array.isArray(v)) c[k] = v.map((i) => ({ id: `${i.id}-a`, text: i.text, level: i.level }));
+  }
+  return c;
 }
 
 /**
