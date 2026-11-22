@@ -15,37 +15,92 @@ const FONT_STACK: Record<Settings["docFont"], string> = {
 
 /** Aperçu HTML fidèle à l'export : mêmes blocs, tailles en pt, police et couleurs des réglages. */
 export function Preview({ meta, type, content, settings }: { meta: Meta; type: DocType; content: Content; settings: Settings }) {
-  const model = buildDocModel(meta, type, content);
+  const style = settings.docStyle ?? "cesi";
+  const classic = style === "classique";
+  const rapport = style === "rapport";
+  const plain = style !== "cesi";
+  const ORANGE = "#D0583A";
+  const model = buildDocModel(meta, type, content, style);
   const accent = settings.accentColor;
-  const pink = settings.docSecondaryColor;
-  // Le n-ième bloc « section » correspond à la n-ième rubrique du gabarit, soit l'entrée n+1 de la navigation (0 = en-tête).
-  let sectionIdx = 0;
+  // classique : puces et numéros noirs, titres bleus du thème Word
+  const pink = plain ? "#000000" : settings.docSecondaryColor;
+  const BLUE = "#4472C4";
+  const LIGHT = "#8EAADB";
+  /** Puces du style classique : « - », « o », « ▪ » (au lieu des ■ CESI). */
+  const mk = (m: string, level: number) => (plain && m === "■" ? (classic ? ["-", "o", "▪"] : ["•", "o", "▪"])[level] ?? "-" : m);
+  const headFont = classic && settings.docFont === "Calibri" ? "'Calibri Light', Carlito, 'Segoe UI Light', sans-serif" : undefined;
 
   return (
-    <div className="paper mx-auto w-full max-w-[210mm] px-[7%] pt-[5%] pb-[7%] text-[10.5pt] leading-[1.35]" style={{ fontFamily: FONT_STACK[settings.docFont] }}>
-      {/* En-tête de page */}
-      <p className="mb-5 pb-1 font-bold leading-none" style={{ borderBottom: `3px solid ${accent}` }}>
-        <span className="text-[14pt]">CESI</span>
-        <span className="text-[8pt]">&nbsp;&nbsp;_ÉCOLE D&apos;INGÉNIEURS</span>
-      </p>
-
-      <div className="inline-block w-[35%] min-w-fit bg-black px-[10pt] py-[4pt] text-[11pt] font-bold text-white">{model.banner}</div>
-      <div className="px-[13pt] py-[13pt] text-[clamp(14pt,3.5vw,20pt)] font-bold leading-tight" style={{ background: accent, color: readableOn(accent) }}>
-        {model.title}
-      </div>
-      {model.info && <p className="mt-[4pt] text-[8.5pt] text-[#666]">{model.info}</p>}
+    <div
+      className="paper mx-auto w-full max-w-[210mm] px-[7%] pt-[5%] pb-[7%] text-[10.5pt] leading-[1.35]"
+      style={{ fontFamily: FONT_STACK[settings.docFont] }}
+      data-style={style}
+    >
+      {rapport ? (
+        <>
+          <p className="mb-[12pt] text-[16pt] font-bold italic">{model.pbl}</p>
+          <h1 className="mb-[4pt] text-[clamp(18pt,4vw,24pt)] font-bold underline">{model.heading}</h1>
+          {model.info && <p className="mb-[6pt] text-[8.5pt] text-[#666]">{model.info}</p>}
+        </>
+      ) : classic ? (
+        <>
+          <h1 className="pb-[2pt] text-center text-[clamp(22pt,5vw,36pt)] leading-tight" style={{ color: BLUE, borderBottom: `1px solid ${BLUE}`, fontFamily: headFont }}>
+            {model.heading}
+          </h1>
+          {model.info && <p className="mt-[4pt] mb-[6pt] text-center text-[8.5pt] text-[#666]">{model.info}</p>}
+        </>
+      ) : (
+        <>
+          {/* En-tête de page */}
+          <p className="mb-5 pb-1 font-bold leading-none" style={{ borderBottom: `3px solid ${accent}` }}>
+            <span className="text-[14pt]">CESI</span>
+            <span className="text-[8pt]">&nbsp;&nbsp;_ÉCOLE D&apos;INGÉNIEURS</span>
+          </p>
+          <div className="inline-block w-[35%] min-w-fit bg-black px-[10pt] py-[4pt] text-[11pt] font-bold text-white">{model.banner}</div>
+          <div className="px-[13pt] py-[13pt] text-[clamp(14pt,3.5vw,20pt)] font-bold leading-tight" style={{ background: accent, color: readableOn(accent) }}>
+            {model.title}
+          </div>
+          {model.info && <p className="mt-[4pt] text-[8.5pt] text-[#666]">{model.info}</p>}
+        </>
+      )}
 
       {model.blocks.map((b, k) => {
         switch (b.kind) {
           case "section":
+            if (rapport)
+              return (
+                <h2 key={k} data-preview-nav={b.nav} className="mt-[12pt] mb-[6pt] text-[14pt] font-bold sm:text-[16pt]" style={{ color: ORANGE }}>
+                  {b.label}.
+                </h2>
+              );
+            if (classic)
+              return (
+                <h2 key={k} data-preview-nav={b.nav} className="mt-[12pt] mb-[6pt] flex text-[16pt] sm:text-[20pt]" style={{ color: BLUE, fontFamily: headFont }}>
+                  <span className="w-[0.55in] shrink-0">{b.num}.</span>
+                  <span>{b.label}</span>
+                </h2>
+              );
             return (
-              <div key={k} data-preview-nav={++sectionIdx} className="mt-[12pt] mb-[4pt] flex items-stretch">
+              <div key={k} data-preview-nav={b.nav} className="mt-[12pt] mb-[4pt] flex items-stretch">
                 <span className="w-[17pt] shrink-0" style={{ background: accent }} />
                 <h2 className="flex-1 border-b border-black py-[3pt] pl-[8pt] text-[13pt] font-bold sm:text-[15pt]">
                   {b.num && <span style={{ color: pink }}>{b.num} </span>}
                   {b.title}
                 </h2>
               </div>
+            );
+          case "h2":
+            if (rapport)
+              return (
+                <h3 key={k} data-preview-nav={b.nav} className="mt-[8pt] mb-[4pt] text-[14pt] font-bold underline sm:text-[16pt]">
+                  {b.text}
+                </h3>
+              );
+            return (
+              <h3 key={k} data-preview-nav={b.nav} className="mt-[4pt] mb-[3pt] ml-[0.3in] flex gap-[8pt] text-[13pt] sm:text-[16pt]" style={{ color: LIGHT, fontFamily: headFont }}>
+                <span>{b.num})</span>
+                <span>{b.text}</span>
+              </h3>
             );
           case "subheading":
             return <p key={k} className="mb-[3pt] text-[11pt] font-bold">{b.text}</p>;
@@ -61,7 +116,7 @@ export function Preview({ meta, type, content, settings }: { meta: Meta; type: D
             return (
               <ul key={k}>
                 {b.items.map((r) => (
-                  <Item key={r.label} marker="■" pink={pink} level={0} bold>
+                  <Item key={r.label} marker={mk("■", 0)} pink={pink} level={0} bold classic={plain}>
                     {r.label} : {r.value}
                   </Item>
                 ))}
@@ -79,14 +134,14 @@ export function Preview({ meta, type, content, settings }: { meta: Meta; type: D
             );
           case "list": {
             if (b.asTable)
-              return <KeywordTable key={k} items={b.items} headers={b.asTable} accent={accent} accentFg={readableOn(accent)} />;
+              return <KeywordTable key={k} items={b.items} headers={b.asTable} accent={classic ? BLUE : rapport ? ORANGE : accent} accentFg={plain ? "#ffffff" : readableOn(accent)} />;
             const nums = numberItems(b.items);
             return (
               <ul key={k}>
                 {b.items.map((it, i) => {
                   const st = it.status ? STATUS_META[it.status] : undefined;
                   return (
-                    <Item key={it.id} marker={listMarker(b.style, it.level, nums[i])} pink={pink} level={it.level}>
+                    <Item key={it.id} marker={mk(listMarker(b.style, it.level, nums[i]), it.level)} pink={pink} level={it.level} classic={plain}>
                       <span style={st ? { background: st.highlight } : undefined} className={it.detail || it.blocks || st ? "font-bold" : ""}>
                         {st && `${st.symbol} `}
                         <Inline text={it.text} />
@@ -106,16 +161,24 @@ export function Preview({ meta, type, content, settings }: { meta: Meta; type: D
           }
         }
       })}
-      <p className="mt-8 text-right text-[8pt] font-bold">PROSIT&nbsp;&nbsp;_&nbsp;&nbsp;1</p>
+      {rapport ? null : classic ? (
+        <p className="mt-8 text-right text-[9pt]" style={{ color: BLUE }}>
+          Page <strong>1</strong> sur <strong>1</strong>
+        </p>
+      ) : (
+        <p className="mt-8 text-right text-[8pt] font-bold">PROSIT&nbsp;&nbsp;_&nbsp;&nbsp;1</p>
+      )}
     </div>
   );
 }
 
-function Item({ marker, pink, level, bold, children }: { marker: string; pink: string; level: number; bold?: boolean; children: React.ReactNode }) {
+function Item({ marker, pink, level, bold, classic, children }: { marker: string; pink: string; level: number; bold?: boolean; classic?: boolean; children: React.ReactNode }) {
   const isSquare = marker === "■";
+  // classique : retrait Word (puce à 0,25 po, texte à 0,5 po + 0,5 po par niveau)
+  const pad = classic ? (360 + level * 720) / 20 : (510 - 283 + level * 397) / 20;
   return (
-    <li className={`mb-[3pt] flex ${bold ? "font-bold" : ""}`} style={{ paddingLeft: `${(510 - 283 + level * 397) / 20}pt` }}>
-      <span className={`shrink-0 pr-[4pt] font-bold ${isSquare ? "text-[7pt] leading-[2]" : ""}`} style={{ color: pink }}>
+    <li className={`mb-[3pt] flex ${bold ? "font-bold" : ""}`} style={{ paddingLeft: `${pad}pt` }}>
+      <span className={`shrink-0 ${classic ? "w-[18pt] font-normal" : "pr-[4pt] font-bold"} ${isSquare ? "text-[7pt] leading-[2]" : ""}`} style={{ color: pink }}>
         {marker}
       </span>
       <div className="min-w-0 flex-1 break-words">{children}</div>

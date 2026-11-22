@@ -5,6 +5,7 @@ import { useState } from "react";
 import { api } from "@/lib/client-api";
 import { readableOn } from "@/lib/color";
 import { buildFilename } from "@/lib/filename";
+import { DOC_STYLES, type DocStyle } from "@/lib/doc-model";
 import { DEFAULT_SETTINGS, DOC_FONTS, SettingsSchema, type Settings } from "@/lib/schema";
 
 const ACCENTS = ["#FFE600", "#F59E0B", "#22C55E", "#3B82F6", "#E11D48"];
@@ -113,6 +114,22 @@ export function SettingsForm({ initial }: { initial: Settings }) {
                 {(["light", "dark"] as const).map((m) => (
                   <button key={m} type="button" onClick={() => set("colorMode", m)} className={`btn flex-1 justify-center ${s.colorMode === m ? "btn-primary" : ""}`}>
                     {m === "light" ? "Clair" : "Sombre"}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label="Mise en page du document" className="sm:col-span-2">
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(Object.keys(DOC_STYLES) as DocStyle[]).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setS((p) => ({ ...p, docStyle: k, docFont: DOC_STYLES[k].font }))}
+                    className={`rounded-sm border p-3 text-left ${s.docStyle === k ? "border-ink ring-2 ring-accent" : "border-line hover:border-ink"}`}
+                    aria-pressed={s.docStyle === k}
+                  >
+                    <span className="block text-sm font-semibold">{DOC_STYLES[k].label}</span>
+                    <span className="block text-xs text-muted">{DOC_STYLES[k].description}</span>
                   </button>
                 ))}
               </div>

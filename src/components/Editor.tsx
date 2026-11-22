@@ -10,7 +10,7 @@ import { effectiveMeta } from "@/lib/meta";
 import { channelName, type PresentationMessage } from "@/lib/presentation";
 import type { Content, DocType, ListItem, Meta, MetaPatch, Settings } from "@/lib/schema";
 import { coerceContent, emptyContent, getTemplate, isContentEmpty, mergeAllerIntoRetour, mergeImported, retourToAller, sectionNumbers, type FieldDef, type ImportMergeStats } from "@/lib/templates";
-import { toRoman } from "@/lib/doc-model";
+import { DOC_STYLES, toRoman, type DocStyle } from "@/lib/doc-model";
 import { textForTextField, textToListItems } from "@/lib/ai/insert";
 import { newItemId } from "@/lib/list-ops";
 import { toggleColorMode } from "@/lib/theme-client";
@@ -60,7 +60,18 @@ function filled(v: Content[string] | undefined): boolean {
   return Array.isArray(v) && v.some((i) => i.text.trim() !== "");
 }
 
-export function Editor({ prosit: initialProsit, documents, settings }: Props) {
+export function Editor({ prosit: initialProsit, documents, settings: initialSettings }: Props) {
+  // réglages vivants : le changement de mise en page s'applique tout de suite à l'aperçu
+  const [settings, setSettings] = useState(initialSettings);
+  const changeStyle = async (docStyle: DocStyle) => {
+    const next: Settings = { ...settings, docStyle, docFont: DOC_STYLES[docStyle].font };
+    setSettings(next);
+    try {
+      await api("/api/settings", { method: "PUT", body: JSON.stringify(next) });
+    } catch (e) {
+      setNotice(`Mise en page non enregistrée : ${(e as Error).message}`);
+    }
+  };
   const router = useRouter();
   const search = useSearchParams();
   const prositId = initialProsit.id;
@@ -469,6 +480,21 @@ ${add}` : add;
             <h1 className="title-cesi truncate text-lg leading-tight sm:text-xl">{meta.nom || "Sans nom"}</h1>
             <p className="truncate text-xs text-muted">{meta.theme || "Thème non renseigné"}</p>
           </div>
+          <label className="flex items-center gap-1.5 text-xs text-muted" title="Style du document (aperçu, Word et PDF)">
+            <span className="hidden xl:inline">Mise en page</span>
+            <select
+              className="field w-auto py-1 pr-7 text-xs"
+              value={settings.docStyle ?? "cesi"}
+              onChange={(e) => void changeStyle(e.target.value as DocStyle)}
+              aria-label="Mise en page du document"
+            >
+              {(Object.keys(DOC_STYLES) as DocStyle[]).map((k) => (
+                <option key={k} value={k}>
+                  {DOC_STYLES[k].label}
+                </option>
+              ))}
+            </select>
+          </label>
           <SaveIndicator status={status} error={error} />
           <div className="flex items-center gap-0.5">
             <button className="btn btn-ghost btn-icon" onClick={undo} disabled={!history.canUndo} title="Annuler (Ctrl+Z)" aria-label="Annuler">
