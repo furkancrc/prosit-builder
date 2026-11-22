@@ -101,6 +101,8 @@ export const SettingsSchema = z.object({
   docSecondaryColor: hexColor,
   colorMode: z.enum(["light", "dark"]),
   docFont: z.enum(DOC_FONTS),
+  /** Mise en page des documents : « cesi » (Boucle PBL), « classique » (Word) ou « rapport » (Times). */
+  docStyle: z.enum(["cesi", "classique", "rapport"]),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
@@ -113,6 +115,7 @@ export const DEFAULT_SETTINGS: Settings = {
   docSecondaryColor: "#EE85A0",
   colorMode: "light",
   docFont: "Arial",
+  docStyle: "cesi",
 };
 
 /** Réordonne/valide une liste à plat : le premier élément est au niveau 0, chaque niveau ≤ précédent + 1. */

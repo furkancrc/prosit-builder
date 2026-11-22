@@ -1,11 +1,22 @@
 import type { Content, DocType, ListItem, Meta, RichBlock } from "./schema";
 import { normalizeList } from "./schema";
-import { coerceContent, getTemplate, type ListStyle } from "./templates";
+import { coerceContent, getTemplate, type FieldDef, type ListStyle, type SectionDef } from "./templates";
 import { formatDateFr } from "./meta";
+
+/** Styles de mise en page disponibles (choisis dans l'éditeur ou les réglages). */
+export const DOC_STYLES = {
+  cesi: { label: "Boucle PBL (CESI)", description: "Bandeau noir, bloc titre jaune, rubriques I à XII, puces roses", font: "Arial" },
+  classique: { label: "Classique (Word)", description: "Grand titre bleu, rubriques regroupées « I. » / « 1) », puces « - »", font: "Calibri" },
+  rapport: { label: "Rapport (Times)", description: "Times, « Prosit retour : » souligné, rubriques orange, sous-titres soulignés, puces « • »", font: "Times New Roman" },
+} as const;
+export type DocStyle = keyof typeof DOC_STYLES;
 
 /** Représentation intermédiaire partagée par l'aperçu HTML et l'export .docx. */
 export type Block =
-  | { kind: "section"; title: string; num?: string }
+  /** Titre de rubrique (niveau 1) : `title` en capitales (style CESI), `label` tel quel (style classique). */
+  | { kind: "section"; title: string; label: string; num?: string; nav: number }
+  /** Sous-titre numéroté « 1) Mots clés : » (style classique). */
+  | { kind: "h2"; text: string; num: number; nav?: number }
   | { kind: "subheading"; text: string }
   | { kind: "para"; text: string }
   | { kind: "list"; style: ListStyle; items: ListItem[]; instance: number; withStatus?: boolean; asTable?: [string, string] }
@@ -16,6 +27,11 @@ export type Block =
 
 export interface DocModel {
   type: DocType;
+  style: DocStyle;
+  /** Titre du style classique (« Prosit Aller n°2 ») ou rapport (« Prosit retour : »). */
+  heading: string;
+  /** Ligne « Boucle PBL 2 : thème » du style rapport. */
+  pbl: string;
   /** Bandeau noir : « PROSIT ALLER » / « PROSIT RETOUR ». */
   banner: string;
   /** Bloc jaune : « Boucle PBL : <thème> ». */
@@ -25,7 +41,20 @@ export interface DocModel {
   blocks: Block[];
 }
 
-export function buildDocModel(meta: Meta, type: DocType, rawContent: Content): DocModel {
+/**
+ * Style classique : regroupement des rubriques comme dans le template Word d'origine
+ * (« I. Prendre connaissance… » → 1) Mots clés, 2) Contexte ; « II. Analyser le besoin » → …).
+ */
+const CLASSIC_GROUPS: { title: string; sections: string[] }[] = [
+  { title: "Prendre connaissance de la situation et clarifier", sections: ["Rôles", "Mots clés", "Contexte"] },
+  { title: "Analyser le besoin", sections: ["Problématique", "Contraintes", "Livrables"] },
+];
+const CLASSIC_LABELS: Record<string, string> = {
+  Problématique: "Problème",
+  "Pistes de solution": "Recherche des pistes de solution",
+};
+
+export function buildDocModel(meta: Meta, type: DocType, rawContent: Content, style: DocStyle = "cesi"): DocModel {
   const tpl = getTemplate(type);
   const content = coerceContent(tpl, rawContent);
   const blocks: Block[] = [];
@@ -39,19 +68,61 @@ export function buildDocModel(meta: Meta, type: DocType, rawContent: Content): D
   const visible = tpl.sections.filter((s) => type !== "retour" || allerTitles.has(s.title) || s.fields.some((f) => isFilled(content[f.key])));
   let counter = 0;
 
-  visible.forEach((section) => {
-    const n = section.unnumbered ? undefined : ++counter;
-    blocks.push({ kind: "section", title: section.title.toUpperCase(), num: n ? toRoman(n) : undefined });
-
+  const emitRoles = (section: SectionDef, always: boolean) => {
     const roles = section.fields.filter((f) => f.kind === "role");
-    if (roles.length) {
-      const items = roles.map((f) => ({ label: f.label, value: String(content[f.key] ?? "").trim() })).filter((r) => r.value);
-      blocks.push(items.length ? { kind: "roles", items } : { kind: "empty", text: "—" });
-    }
+    if (!roles.length) return;
+    const items = roles.map((f) => ({ label: f.label, value: String(content[f.key] ?? "").trim() })).filter((r) => r.value);
+    if (items.length) blocks.push({ kind: "roles", items });
+    else if (always) blocks.push({ kind: "empty", text: "—" });
+  };
 
-    for (const f of section.fields) {
-      if (f.kind === "role") continue;
-      if (f.heading) blocks.push({ kind: "subheading", text: `${f.label} :` });
+  if (style !== "cesi") {
+    // titres « I. » regroupant des sous-titres « 1) », sauf rubriques autonomes
+    const byTitle = new Map(visible.map((s) => [s.title, s]));
+    /** Entrée de navigation de l'éditeur (0 = en-tête, i + 1 = rubrique i du gabarit). */
+    const navOf = (s: SectionDef) => tpl.sections.indexOf(s) + 1;
+    const used = new Set<string>();
+    for (const section of visible) {
+      if (used.has(section.title)) continue;
+      const group = CLASSIC_GROUPS.find((g) => g.sections.includes(section.title));
+      const members = group ? group.sections.map((t) => byTitle.get(t)).filter((s): s is SectionDef => !!s) : [section];
+      members.forEach((m) => used.add(m.title));
+      const label = group?.title ?? CLASSIC_LABELS[section.title] ?? section.title;
+      blocks.push({ kind: "section", title: label.toUpperCase(), label, num: toRoman(++counter), nav: navOf(members[0]) });
+      let h2 = 0;
+      for (const m of members) {
+        const isRoles = m.fields.every((f) => f.kind === "role");
+        if (isRoles) {
+          // les rôles n'apparaissent que s'ils sont renseignés
+          if (m.fields.some((f) => String(content[f.key] ?? "").trim())) {
+            blocks.push({ kind: "h2", text: `${m.title} :`, num: ++h2, nav: navOf(m) });
+            emitRoles(m, false);
+          }
+          continue;
+        }
+        if (group) blocks.push({ kind: "h2", text: `${CLASSIC_LABELS[m.title] ?? m.title} :`, num: ++h2, nav: navOf(m) });
+        for (const f of m.fields) {
+          if (f.kind === "role") continue;
+          if (f.heading) blocks.push({ kind: "h2", text: `${f.label} :`, num: ++h2 });
+          emitField(f);
+        }
+      }
+    }
+  } else {
+    visible.forEach((section) => {
+      const n = section.unnumbered ? undefined : ++counter;
+      blocks.push({ kind: "section", title: section.title.toUpperCase(), label: section.title, num: n ? toRoman(n) : undefined, nav: tpl.sections.indexOf(section) + 1 });
+      emitRoles(section, true);
+      for (const f of section.fields) {
+        if (f.kind === "role") continue;
+        if (f.heading) blocks.push({ kind: "subheading", text: `${f.label} :` });
+        emitField(f);
+      }
+    });
+  }
+
+  function emitField(f: FieldDef) {
+      if (f.kind === "role") return;
       const v = content[f.key];
       if (f.kind === "text") {
         const paras = String(v ?? "")
@@ -75,10 +146,12 @@ export function buildDocModel(meta: Meta, type: DocType, rawContent: Content): D
           blocks.push({ kind: "list", style: f.style, items: clean, instance: ++listInstance, withStatus: !!f.status, asTable: f.asTable });
         }
       }
-    }
-  });
+  }
 
   const info = [
+    // le style classique n'a pas de bloc « Boucle PBL : thème » : le thème passe dans la ligne d'infos
+    style === "classique" && meta.theme,
+    // le style rapport affiche déjà « Boucle PBL n : thème » en tête
     meta.numero && `Prosit n° ${meta.numero}`,
     meta.bloc,
     meta.auteur && (meta.groupe ? `${meta.auteur} (${meta.groupe})` : meta.auteur),
@@ -90,6 +163,12 @@ export function buildDocModel(meta: Meta, type: DocType, rawContent: Content): D
 
   return {
     type,
+    style,
+    heading:
+      style === "rapport"
+        ? `Prosit ${type} :`
+        : `Prosit ${type === "aller" ? "Aller" : "Retour"}${meta.numero ? ` n°${meta.numero}` : ""}`,
+    pbl: `Boucle PBL${meta.numero ? ` ${meta.numero}` : ""} : ${meta.theme || meta.nom || "…"}`,
     banner: type === "aller" ? "PROSIT ALLER" : "PROSIT RETOUR / CER",
     title: `Boucle PBL : ${meta.theme || meta.nom || "…"}`,
     info,

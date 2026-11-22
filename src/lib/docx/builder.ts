@@ -15,13 +15,14 @@ import {
   TableCell,
   TableLayoutType,
   TableRow,
+  Tab,
   TextRun,
   WidthType,
   type ILevelsOptions,
 } from "docx";
 import { STATUS_META, type Content, type DocType, type ListItem, type Meta, type PisteStatus, type RichBlock, type Settings } from "../schema";
 import { splitBold, stripBold } from "../inline";
-import { buildDocModel, type Block } from "../doc-model";
+import { buildDocModel, type Block, type DocStyle } from "../doc-model";
 import { fitSize, type ImageInfo } from "../image-info";
 import type { ListStyle } from "../templates";
 
@@ -63,16 +64,33 @@ export interface BuildOptions {
   meta: Meta;
   type: DocType;
   content: Content;
-  settings: Pick<Settings, "docFont" | "docSecondaryColor" | "accentColor">;
+  settings: Pick<Settings, "docFont" | "docSecondaryColor" | "accentColor"> & { docStyle?: DocStyle };
   /** Images utilisées par les blocs riches, préchargées (identifiant → données). */
   assets?: Map<string, ImageInfo & { data: Buffer }>;
 }
 
+// Style « Classique (Word) » : couleurs du thème Office du template d'origine
+const CLASSIC_BLUE = "4472C4";
+const CLASSIC_LIGHT = "8EAADB";
+// Style « Rapport (Times) » : orange des titres de « PrositRetourPBL2 »
+const RAPPORT_ORANGE = "D0583A";
+
 export function buildDocument({ meta, type, content, settings, assets }: BuildOptions): Document {
-  const model = buildDocModel(meta, type, content);
+  const style: DocStyle = settings.docStyle ?? "cesi";
+  const classic = style === "classique";
+  const rapport = style === "rapport";
+  /** Styles « traitement de texte » (classique, rapport) : puces noires, listes serrées, pas d'en-tête CESI. */
+  const plain = style !== "cesi";
+  const model = buildDocModel(meta, type, content, style);
   const font = settings.docFont;
+  // titres du style classique en Calibri Light quand le corps est en Calibri (comme Word)
+  const headFont = classic && font === "Calibri" ? "Calibri Light" : font;
   const accent = hex(settings.accentColor);
-  const secondary = hex(settings.docSecondaryColor);
+  const secondary = plain ? "000000" : hex(settings.docSecondaryColor);
+  const tableHead = classic ? CLASSIC_BLUE : rapport ? RAPPORT_ORANGE : accent;
+  const tableHeadFg = plain ? "FFFFFF" : readableOn(settings.accentColor);
+  // listes serrées dans le style classique (comme les puces Word), aérées en CESI
+  const listSpacing = plain ? { after: 0, line: 259 } : { after: 60 };
 
   const run = (text: string, o: { bold?: boolean; size?: number; color?: string; italics?: boolean } = {}) =>
     new TextRun({ text, font, bold: o.bold ?? false, italics: o.italics, size: o.size ?? SZ_BODY, color: o.color ?? "000000" });
@@ -111,7 +129,7 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
       new TableCell({
         width: { size: w, type: WidthType.DXA },
         margins: { top: 40, bottom: 40, left: 90, right: 90 },
-        shading: head ? { type: ShadingType.CLEAR, color: "auto", fill: accent } : undefined,
+        shading: head ? { type: ShadingType.CLEAR, color: "auto", fill: tableHead } : undefined,
         children,
       });
     const p = (children: TextRun[]) => new Paragraph({ spacing: { after: 0 }, children });
@@ -123,7 +141,7 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
       rows: [
         new TableRow({
           tableHeader: true,
-          children: headers.map((h, i) => cell([p([run(h, { bold: true, color: readableOn(settings.accentColor) })])], i ? CONTENT_W - w1 : w1, true)),
+          children: headers.map((h, i) => cell([p([run(h, { bold: true, color: tableHeadFg })])], i ? CONTENT_W - w1 : w1, true)),
         }),
         ...items.map(
           (it) =>
@@ -217,23 +235,25 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
   };
 
   // ---------- numérotation (puces ■ roses, sous-niveaux numérotés) ----------
-  const markerRun = { bold: true, color: secondary, size: SZ_BULLET, font };
-  const numRun = { bold: true, color: secondary, size: SZ_BODY, font };
+  // CESI : ■ roses collés au texte ; classique : « - » / « o » noirs avec tabulation, comme Word
+  const markerRun = plain ? { color: "000000", size: SZ_BODY, font } : { bold: true, color: secondary, size: SZ_BULLET, font };
+  const numRun = plain ? { color: "000000", size: SZ_BODY, font } : { bold: true, color: secondary, size: SZ_BODY, font };
   const lvl = (level: number, format: (typeof LevelFormat)[keyof typeof LevelFormat], text: string): ILevelsOptions => ({
     level,
     format,
     text,
     alignment: AlignmentType.LEFT,
-    suffix: LevelSuffix.SPACE,
+    suffix: plain ? LevelSuffix.TAB : LevelSuffix.SPACE,
     style: {
       run: format === LevelFormat.BULLET ? markerRun : numRun,
-      paragraph: { indent: { left: LIST_LEFT + level * LIST_STEP, hanging: LIST_HANG } },
+      paragraph: { indent: plain ? { left: 720 * (level + 1), hanging: 360 } : { left: LIST_LEFT + level * LIST_STEP, hanging: LIST_HANG } },
     },
   });
+  const [b0, b1, b2] = classic ? ["-", "o", "▪"] : rapport ? ["•", "o", "▪"] : ["■", "■", "■"];
   const numbering: Record<ListStyle, ILevelsOptions[]> = {
-    bullet: [lvl(0, LevelFormat.BULLET, "■"), lvl(1, LevelFormat.BULLET, "■"), lvl(2, LevelFormat.BULLET, "■")],
+    bullet: [lvl(0, LevelFormat.BULLET, b0), lvl(1, LevelFormat.BULLET, b1), lvl(2, LevelFormat.BULLET, b2)],
     numbered: [lvl(0, LevelFormat.DECIMAL, "%1."), lvl(1, LevelFormat.LOWER_LETTER, "%2."), lvl(2, LevelFormat.LOWER_ROMAN, "%3.")],
-    "bullet-numbered": [lvl(0, LevelFormat.BULLET, "■"), lvl(1, LevelFormat.DECIMAL, "%2."), lvl(2, LevelFormat.LOWER_LETTER, "%3.")],
+    "bullet-numbered": [lvl(0, LevelFormat.BULLET, b0), lvl(1, LevelFormat.DECIMAL, "%2."), lvl(2, LevelFormat.LOWER_LETTER, "%3.")],
   };
 
   // ---------- blocs ----------
@@ -279,7 +299,47 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
   const blockToChildren = (b: Block): (Paragraph | Table)[] => {
     switch (b.kind) {
       case "section":
+        if (rapport)
+          // rapport : titre de rubrique orange en gras terminé par un point (« Plan d'action. »)
+          return [
+            new Paragraph({
+              keepNext: true,
+              keepLines: true,
+              spacing: { before: 240, after: 120 },
+              children: [new TextRun({ text: `${b.label}.`, font, size: 32, bold: true, color: RAPPORT_ORANGE })],
+            }),
+          ];
+        if (classic)
+          return [
+            new Paragraph({
+              keepNext: true,
+              keepLines: true,
+              spacing: { before: 240, after: 120 },
+              indent: { left: 794, hanging: 794 },
+              children: [new TextRun({ children: [`${b.num ?? ""}.`, new Tab(), b.label], font: headFont, size: 40, color: CLASSIC_BLUE })],
+            }),
+          ];
         return [spacer(120), sectionHeading(b.title, b.num), new Paragraph({ keepNext: true, spacing: { after: 0, line: 80, lineRule: "exact" }, children: [] })];
+      case "h2":
+        if (rapport)
+          // rapport : sous-titre noir gras souligné (« Mots clés : »)
+          return [
+            new Paragraph({
+              keepNext: true,
+              keepLines: true,
+              spacing: { before: 160, after: 80 },
+              children: [new TextRun({ text: b.text, font, size: 32, bold: true, underline: {} })],
+            }),
+          ];
+        return [
+          new Paragraph({
+            keepNext: true,
+            keepLines: true,
+            spacing: { before: 80, after: 60 },
+            indent: { left: 794, hanging: 434 },
+            children: [new TextRun({ children: [`${b.num})`, new Tab(), b.text], font: headFont, size: 32, color: CLASSIC_LIGHT })],
+          }),
+        ];
       case "subheading":
         return [new Paragraph({ keepNext: true, spacing: { after: 60 }, children: [run(b.text, { bold: true, size: 22 })] })];
       case "para":
@@ -290,7 +350,7 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
         return b.items.map(
           (r) =>
             new Paragraph({
-              spacing: { after: 60 },
+              spacing: listSpacing,
               numbering: { reference: "bullet", level: 0, instance: 0 },
               children: [run(`${r.label} : ${r.value}`, { bold: true })],
             }),
@@ -323,7 +383,7 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
           const indent = LIST_LEFT + it.level * LIST_STEP;
           return [
             new Paragraph({
-              spacing: { after: 60 },
+              spacing: listSpacing,
               numbering: { reference: b.style, level: it.level, instance: b.instance },
               children,
             }),
@@ -379,8 +439,27 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
     ],
   });
 
-  const children: (Paragraph | Table)[] = [banner, titleBlock];
-  if (model.info) children.push(new Paragraph({ spacing: { before: 80, after: 0 }, children: [run(model.info, { size: 17, color: "666666" })] }));
+  const children: (Paragraph | Table)[] = rapport
+    ? [
+        // rapport : « Boucle PBL 2 : thème » en italique gras, puis « Prosit retour : » souligné
+        new Paragraph({ spacing: { after: 240 }, children: [new TextRun({ text: model.pbl, font, size: 32, bold: true, italics: true })] }),
+        new Paragraph({ spacing: { after: 120 }, children: [new TextRun({ text: model.heading, font, size: 48, bold: true, underline: {} })] }),
+      ]
+    : classic
+    ? [
+        // classique : grand titre bleu centré souligné d'un filet bleu (style « Titre » de Word)
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 80, line: 240 },
+          border: { bottom: { style: BorderStyle.SINGLE, size: 6, space: 4, color: CLASSIC_BLUE } },
+          children: [new TextRun({ text: model.heading, font: headFont, size: 72, color: CLASSIC_BLUE })],
+        }),
+      ]
+    : [banner, titleBlock];
+  if (model.info)
+    children.push(
+      new Paragraph({ alignment: classic ? AlignmentType.CENTER : AlignmentType.LEFT, spacing: { before: 80, after: classic ? 120 : 0 }, children: [run(model.info, { size: 17, color: "666666" })] }),
+    );
   for (const b of model.blocks) children.push(...blockToChildren(b));
 
   return new Document({
@@ -405,13 +484,15 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
         },
         headers: {
           default: new Header({
-            children: [
-              new Paragraph({
-                spacing: { after: 0 },
-                border: { bottom: { style: BorderStyle.SINGLE, size: 18, space: 4, color: accent } },
-                children: [run("CESI", { bold: true, size: 28 }), run("  _ÉCOLE D'INGÉNIEURS", { bold: true, size: 16 })],
-              }),
-            ],
+            children: plain
+              ? [new Paragraph({ children: [] })]
+              : [
+                  new Paragraph({
+                    spacing: { after: 0 },
+                    border: { bottom: { style: BorderStyle.SINGLE, size: 18, space: 4, color: accent } },
+                    children: [run("CESI", { bold: true, size: 28 }), run("  _ÉCOLE D'INGÉNIEURS", { bold: true, size: 16 })],
+                  }),
+                ],
           }),
         },
         footers: {
@@ -419,7 +500,17 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
             children: [
               new Paragraph({
                 alignment: AlignmentType.RIGHT,
-                children: [new TextRun({ children: ["PROSIT  _  ", PageNumber.CURRENT], font, bold: true, size: 16 })],
+                children: rapport
+                  ? []
+                  : classic
+                  ? [
+                      // « Page 1 sur 2 », numéros en gras, comme le pied de page du template Word
+                      new TextRun({ text: "Page ", font, size: 18, color: CLASSIC_BLUE }),
+                      new TextRun({ children: [PageNumber.CURRENT], font, size: 18, bold: true, color: CLASSIC_BLUE }),
+                      new TextRun({ text: " sur ", font, size: 18, color: CLASSIC_BLUE }),
+                      new TextRun({ children: [PageNumber.TOTAL_PAGES], font, size: 18, bold: true, color: CLASSIC_BLUE }),
+                    ]
+                  : [new TextRun({ children: ["PROSIT  _  ", PageNumber.CURRENT], font, bold: true, size: 16 })],
               }),
             ],
           }),
