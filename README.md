@@ -139,4 +139,10 @@ Variables : `{type}` (aller/retour), `{Type}`, `{theme}` (partie avant « : »),
 
 ### Prosit retour
 
-Les rubriques du prosit retour ne sont pas encore définies : l'onglet Retour propose un champ libre en attendant. Pour les ajouter, modifie `RETOUR_TEMPLATE` dans `src/lib/templates.ts`. Le formulaire, l'aperçu, l'export et l'import suivent automatiquement.
+Les rubriques du retour / CER sont définies dans `RETOUR_TEMPLATE` (`src/lib/templates.ts`) : les rubriques de l'aller, avec définitions, statuts et contenu riche, puis Synthèse, Questions du tuteur, AAV et Sources. Le formulaire, l'aperçu, l'export et l'import suivent automatiquement.
+
+## Mentions légales
+
+Construit par **Furkan Ciraci** · [GitHub](https://github.com/furkancrc) · [LinkedIn](https://www.linkedin.com/in/furkan-ciraci/)
+
+© 2026 Furkan Ciraci. Projet étudiant indépendant, **non affilié au CESI**. « CESI » est une marque de son propriétaire ; aucun logo officiel n'est utilisé. Les exemples présents dans le code et les tests sont fictifs.

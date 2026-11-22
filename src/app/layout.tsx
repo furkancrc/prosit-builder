@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import { getSettings } from "@/lib/db";
 import { readableOn } from "@/lib/color";
 import { AppHeader } from "@/components/AppHeader";
+import { AppFooter } from "@/components/AppFooter";
 import { authEnabled } from "@/lib/session";
 import "./globals.css";
 
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-dvh antialiased">
         <AppHeader canLogout={authEnabled()} />
         {children}
+        <AppFooter />
       </body>
     </html>
   );
