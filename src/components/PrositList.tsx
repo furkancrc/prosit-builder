@@ -7,6 +7,8 @@ import type { AnneeRow, MatiereRow, PrositRow } from "@/lib/db";
 import { formatDateFr } from "@/lib/meta";
 import { api } from "@/lib/client-api";
 import { currentMatiere, defaultAnneeId } from "@/lib/dossiers";
+import type { Content } from "@/lib/schema";
+import { retourToAller } from "@/lib/templates";
 import { IconCopy, IconEdit, IconPlus, IconTrash, IconUpload } from "./icons";
 
 const UNCLASSIFIED = "non-classes";
@@ -108,12 +110,16 @@ export function PrositList({ initial, initialDossiers }: { initial: PrositRow[];
     run(async () => {
       const fd = new FormData();
       fd.append("file", file);
-      const r = await api<{ type: "aller" | "retour" | null; meta: { numero?: string; theme?: string }; content: Record<string, unknown> }>("/api/import", { method: "POST", body: fd });
-      const type = r.type ?? "aller";
+      // indice tiré du nom du fichier ; le type lu dans le document reste prioritaire
+      fd.append("type", /retour|cer/i.test(file.name) ? "retour" : "aller");
+      const r = await api<{ type: "aller" | "retour" | null; meta: { numero?: string; theme?: string }; content: Content }>("/api/import", { method: "POST", body: fd });
+      const type = r.type ?? (/retour|cer/i.test(file.name) ? "retour" : "aller");
       const nom = file.name.replace(/\.docx$/i, "").trim();
+      // un retour importé seul reconstitue aussi l'aller (mêmes éléments, sans définitions ni statuts)
+      const contents = type === "retour" ? { retour: r.content, aller: retourToAller(r.content) } : { aller: r.content };
       const { id } = await api<{ id: string }>("/api/prosits", {
         method: "POST",
-        body: JSON.stringify({ nom, numero: r.meta.numero, theme: r.meta.theme, contents: { [type]: r.content }, matiereId: importTarget.current }),
+        body: JSON.stringify({ nom, numero: r.meta.numero, theme: r.meta.theme, contents, matiereId: importTarget.current }),
       });
       router.push(`/prosits/${id}?tab=${type}`);
     });

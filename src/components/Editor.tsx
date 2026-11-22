@@ -9,7 +9,7 @@ import { buildFilename } from "@/lib/filename";
 import { effectiveMeta } from "@/lib/meta";
 import { channelName, type PresentationMessage } from "@/lib/presentation";
 import type { Content, DocType, ListItem, Meta, MetaPatch, Settings } from "@/lib/schema";
-import { coerceContent, emptyContent, getTemplate, isContentEmpty, mergeAllerIntoRetour, sectionNumbers, type FieldDef } from "@/lib/templates";
+import { coerceContent, emptyContent, getTemplate, isContentEmpty, mergeAllerIntoRetour, mergeImported, retourToAller, sectionNumbers, type FieldDef, type ImportMergeStats } from "@/lib/templates";
 import { toRoman } from "@/lib/doc-model";
 import { textForTextField, textToListItems } from "@/lib/ai/insert";
 import { newItemId } from "@/lib/list-ops";
@@ -388,23 +388,47 @@ ${add}` : add;
   async function importFile(file: File) {
     setNotice(null);
     try {
+      // l'onglet ouvert et le nom du fichier ne sont que des indices : le type lu dans le document l'emporte
+      const hint: DocType = /retour|cer/i.test(file.name) ? "retour" : /aller/i.test(file.name) ? "aller" : tab;
       const fd = new FormData();
       fd.append("file", file);
-      fd.append("type", tab);
-      const r = await api<{ content: Content; meta: MetaPatch; unmatched: string[] }>("/api/import", { method: "POST", body: fd });
-      const hasContent = Object.values(doc.content).some((v) => filled(v));
-      if (hasContent && !confirm(`Remplacer le contenu actuel du prosit ${tab} par celui de « ${file.name} » ?`)) return;
+      fd.append("type", hint);
+      const r = await api<{ type: DocType | null; content: Content; meta: MetaPatch; unmatched: string[] }>("/api/import", { method: "POST", body: fd });
+      const target: DocType = r.type ?? hint;
+
+      // fusion (jamais de remplacement) dans le bon document ; l'autre n'est pas touché,
+      // sauf un aller vide qu'un retour importé permet de reconstituer
+      let stats: ImportMergeStats = { added: 0, enriched: 0, kept: [] };
+      let allerRebuilt = false;
       update((s) => {
-        const next: EditorState = { ...s, docs: { ...s.docs, [tab]: { ...s.docs[tab], content: coerceContent(template, r.content) } } };
-        if (tab === "aller") {
-          const fill: MetaPatch = {};
-          if (r.meta.numero && !s.base.numero) fill.numero = r.meta.numero;
-          if (r.meta.theme && !s.base.theme) fill.theme = r.meta.theme;
-          if (Object.keys(fill).length) next.base = { ...s.base, ...fill };
+        const merged = mergeImported(target, s.docs[target].content, r.content);
+        stats = merged.stats;
+        const docs = { ...s.docs, [target]: { ...s.docs[target], content: merged.content } };
+        if (target === "retour" && isContentEmpty(s.docs.aller.content)) {
+          docs.aller = { ...s.docs.aller, content: retourToAller(r.content) };
+          allerRebuilt = true;
         }
+        const next: EditorState = { ...s, docs };
+        const fill: MetaPatch = {};
+        if (r.meta.numero && !s.base.numero) fill.numero = r.meta.numero;
+        if (r.meta.theme && !s.base.theme) fill.theme = r.meta.theme;
+        if (Object.keys(fill).length) next.base = { ...s.base, ...fill };
         return next;
       });
-      setNotice(`Import de « ${file.name} » terminé (Ctrl+Z pour annuler).` + (r.unmatched.length ? ` Rubriques non reconnues : ${r.unmatched.join(", ")}.` : ""));
+      if (target !== tab) switchTab(target);
+
+      const parts = [
+        `${stats.added} ajout(s)`,
+        `${stats.enriched} élément(s) complété(s)`,
+        ...(stats.kept.length ? [`conservé(s) car déjà rempli(s) différemment : ${stats.kept.join(", ")}`] : []),
+      ];
+      setNotice(
+        `« ${file.name} » fusionné dans le prosit ${target} : ${parts.join(" · ")}.` +
+          (target !== tab ? ` (fichier détecté comme prosit ${target} : l’onglet ${tab} n’a pas été modifié)` : "") +
+          (allerRebuilt ? " L’aller, vide, a été reconstitué à partir du retour." : "") +
+          (r.unmatched.length ? ` Rubriques non reconnues : ${r.unmatched.join(", ")}.` : "") +
+          " Ctrl+Z pour annuler.",
+      );
     } catch (e) {
       setNotice(`Import impossible : ${(e as Error).message}`);
     }
