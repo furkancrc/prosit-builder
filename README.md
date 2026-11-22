@@ -1,5 +1,7 @@
 # Prosit Builder
 
+[![Licence : MIT](https://img.shields.io/badge/licence-MIT-yellow.svg)](LICENSE)
+
 Web app pour rédiger les **prosits aller / retour** du CESI et les exporter en **Word (.docx)** et en **PDF** au format « Boucle PBL » :
 - en-tête « CESI _ÉCOLE D'INGÉNIEURS » souligné de jaune ;
 - bandeau noir « PROSIT ALLER » et bloc jaune « Boucle PBL : <thème> » ;
