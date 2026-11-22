@@ -19,6 +19,11 @@ Web app pour rédiger les **prosits aller / retour** du CESI et les exporter en 
   - `**gras**` dans tous les textes.
 
   L'import d'un .docx de retour reprend les définitions (« mot : définition »), les surlignages, les images et les tableaux. Les images sont stockées dans `/data/assets`.
+- **Trois mises en page au choix**, depuis le menu « Mise en page » de l'éditeur ou les Réglages. Le changement s'applique en direct à l'aperçu, et au Word / PDF téléchargés :
+  - **Boucle PBL (CESI)** : en-tête CESI, bandeau noir, bloc titre jaune, rubriques I à XII, puces ■ roses ;
+  - **Classique (Word)** : grand titre bleu « Prosit Aller n°2 », rubriques regroupées « I. Prendre connaissance… → 1) Mots clés, 2) Contexte », puces « - », Calibri, « Page X sur Y ».
+  - **Rapport (Times)** : « *Boucle PBL 2 : thème* » en italique, « **Prosit retour :** » souligné, rubriques orange terminées par un point, sous-titres gras soulignés, puces « • », Times New Roman.
+- **Import intelligent** : le type (aller / retour) est lu dans le fichier. Le contenu est **fusionné** et jamais écrasé : champs vides remplis, éléments existants complétés, nouveaux éléments insérés à leur place. Un aller vide est reconstitué à partir d'un retour importé.
 - Navigation par rubriques : barre latérale avec l'état de chaque rubrique (remplie ou non), boutons précédent / suivant.
 - **Annuler / Rétablir** (Ctrl+Z, Ctrl+Maj+Z ou Ctrl+Y), import et réinitialisation compris.
 - **Mode Présentation** : une fenêtre à projeter, mise à jour en direct, qui surligne la rubrique en cours. Plein écran possible.
