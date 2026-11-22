@@ -151,3 +151,7 @@ Les rubriques du retour / CER sont définies dans `RETOUR_TEMPLATE` (`src/lib/te
 Construit par **Furkan Ciraci** · [GitHub](https://github.com/furkancrc) · [LinkedIn](https://www.linkedin.com/in/furkan-ciraci/)
 
 © 2026 Furkan Ciraci. Projet étudiant indépendant, **non affilié au CESI**. « CESI » est une marque de son propriétaire ; aucun logo officiel n'est utilisé. Les exemples présents dans le code et les tests sont fictifs.
+
+## Licence
+
+Distribué sous licence **MIT**, voir [LICENSE](LICENSE). Tu peux utiliser, modifier et redistribuer le code, à condition de conserver la mention de copyright.

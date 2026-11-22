@@ -2,6 +2,12 @@
   "name": "prosit-builder",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "author": "Furkan Ciraci (https://github.com/furkancrc)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/furkancrc/prosit-builder"
+  },
   "type": "module",
   "scripts": {
     "dev": "next dev",

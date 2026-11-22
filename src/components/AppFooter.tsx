@@ -25,7 +25,11 @@ export function AppFooter() {
         </a>
       </p>
       <p className="mt-1">
-        © {new Date().getFullYear()} {AUTHOR.name}. Projet étudiant indépendant, non affilié au CESI. « CESI » est une marque de son propriétaire.
+        © {new Date().getFullYear()} {AUTHOR.name}. Projet étudiant indépendant, non affilié au CESI. « CESI » est une marque de son propriétaire. Code sous licence{' '}
+        <a href={`${AUTHOR.github}/prosit-builder/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer" className="underline hover:text-ink">
+          MIT
+        </a>
+        .
       </p>
     </footer>
   );
