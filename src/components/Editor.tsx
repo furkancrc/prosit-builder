@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentRow, PrositRow } from "@/lib/db";
 import { api, saveApi } from "@/lib/client-api";
 import { buildFilename } from "@/lib/filename";
-import { effectiveMeta } from "@/lib/meta";
+import { effectiveMeta, prositTitle } from "@/lib/meta";
 import { channelName, type PresentationMessage } from "@/lib/presentation";
 import type { Content, DocType, ListItem, Meta, MetaPatch, Settings } from "@/lib/schema";
 import { coerceContent, emptyContent, getTemplate, isContentEmpty, mergeAllerIntoRetour, mergeImported, retourToAller, sectionNumbers, type FieldDef, type ImportMergeStats } from "@/lib/templates";
@@ -111,14 +111,14 @@ export function Editor({ prosit: initialProsit, documents, settings: initialSett
   /** Entrées de navigation : en-tête puis chaque section du template. */
   const navItems = useMemo(
     () => [
-      { label: "En-tête", num: undefined as string | undefined, done: !!(meta.nom && meta.theme) },
+      { label: "En-tête", num: undefined as string | undefined, done: !!(meta.numero && meta.theme) },
       ...template.sections.map((s, i) => ({
         label: s.title,
         num: sectionNums[i] ? toRoman(sectionNums[i]!) : undefined,
         done: s.fields.some((f) => filled(doc.content[f.key])),
       })),
     ],
-    [template, sectionNums, doc.content, meta.nom, meta.theme],
+    [template, sectionNums, doc.content, meta.numero, meta.theme],
   );
 
   // ---------- persistance (diff entre deux états) ----------
@@ -477,7 +477,7 @@ ${add}` : add;
             <IconBack />
           </Link>
           <div className="min-w-0 flex-1">
-            <h1 className="title-cesi truncate text-lg leading-tight sm:text-xl">{meta.nom || "Sans nom"}</h1>
+            <h1 className="title-cesi truncate text-lg leading-tight sm:text-xl">{prositTitle(meta).title}</h1>
             <p className="truncate text-xs text-muted">{meta.theme || "Thème non renseigné"}</p>
           </div>
           <label className="flex items-center gap-1.5 text-xs text-muted" title="Style du document (aperçu, Word et PDF)">

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { buildDocModel, listMarker, numberItems, type Block } from "@/lib/doc-model";
 import { readableOn } from "@/lib/color";
 import { channelName, type PresentationMessage } from "@/lib/presentation";
+import { prositLabel } from "@/lib/meta";
 import { STATUS_META, type PisteStatus } from "@/lib/schema";
 
 /** Couleurs de statut éclaircies pour rester lisibles sur fond noir (projection). */
@@ -46,8 +47,8 @@ export function Presentation({ prositId, initial, accent, secondary }: { prositI
   }, [prositId]);
 
   useEffect(() => {
-    document.title = `Présentation · ${state.meta.nom || "Prosit"}`;
-  }, [state.meta.nom]);
+    document.title = `Présentation · ${prositLabel(state.meta)}`;
+  }, [state.meta]);
 
   useEffect(() => {
     refs.current[state.active]?.scrollIntoView({ behavior: "smooth", block: "center" });

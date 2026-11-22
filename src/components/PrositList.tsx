@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnneeRow, MatiereRow, PrositRow } from "@/lib/db";
-import { formatDateFr } from "@/lib/meta";
+import { compareProsits, formatDateFr, numeroFromFilename, prositLabel, prositTitle } from "@/lib/meta";
 import { api } from "@/lib/client-api";
 import { currentMatiere, defaultAnneeId } from "@/lib/dossiers";
 import type { Content } from "@/lib/schema";
@@ -84,14 +84,15 @@ export function PrositList({ initial, initialDossiers }: { initial: PrositRow[];
   const duplicate = (id: string) => run(async () => { await api(`/api/prosits/${id}/duplicate`, { method: "POST" }); await reload(); });
 
   const remove = (p: PrositRow) => {
-    if (!confirm(`Supprimer « ${p.nom} » (aller et retour) ? Cette action est définitive.`)) return;
+    if (!confirm(`Supprimer « ${prositLabel(p)} » (aller et retour) ? Cette action est définitive.`)) return;
     run(async () => { await api(`/api/prosits/${p.id}`, { method: "DELETE" }); await reload(); });
   };
 
-  const rename = (id: string, nom: string) =>
+  /** Le titre est calculé : « renommer » revient à changer le numéro et le thème. */
+  const rename = (id: string, patch: { numero: string; theme: string }) =>
     run(async () => {
       setRenaming(null);
-      await api(`/api/prosits/${id}`, { method: "PATCH", body: JSON.stringify({ nom }) });
+      await api(`/api/prosits/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
       await reload();
     });
 
@@ -114,12 +115,13 @@ export function PrositList({ initial, initialDossiers }: { initial: PrositRow[];
       fd.append("type", /retour|cer/i.test(file.name) ? "retour" : "aller");
       const r = await api<{ type: "aller" | "retour" | null; meta: { numero?: string; theme?: string }; content: Content }>("/api/import", { method: "POST", body: fd });
       const type = r.type ?? (/retour|cer/i.test(file.name) ? "retour" : "aller");
-      const nom = file.name.replace(/\.docx$/i, "").trim();
+      // le titre est calculé (numéro + thème) : on ne reprend pas le nom du fichier, seulement son numéro si besoin
+      const numero = r.meta.numero ?? numeroFromFilename(file.name) ?? "";
       // un retour importé seul reconstitue aussi l'aller (mêmes éléments, sans définitions ni statuts)
       const contents = type === "retour" ? { retour: r.content, aller: retourToAller(r.content) } : { aller: r.content };
       const { id } = await api<{ id: string }>("/api/prosits", {
         method: "POST",
-        body: JSON.stringify({ nom, numero: r.meta.numero, theme: r.meta.theme, contents, matiereId: importTarget.current }),
+        body: JSON.stringify({ nom: "", numero, theme: r.meta.theme, contents, matiereId: importTarget.current }),
       });
       router.push(`/prosits/${id}?tab=${type}`);
     });
@@ -176,19 +178,27 @@ export function PrositList({ initial, initialDossiers }: { initial: PrositRow[];
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              const v = new FormData(e.currentTarget).get("nom");
-              if (typeof v === "string" && v.trim()) rename(p.id, v.trim());
+              const fd = new FormData(e.currentTarget);
+              rename(p.id, { numero: String(fd.get("numero") ?? "").trim(), theme: String(fd.get("theme") ?? "").trim() });
             }}
-            className="flex gap-2"
+            onKeyDown={(e) => e.key === "Escape" && setRenaming(null)}
+            className="flex flex-wrap items-center gap-2"
           >
-            <input name="nom" defaultValue={p.nom} autoFocus className="field" onKeyDown={(e) => e.key === "Escape" && setRenaming(null)} />
+            <label className="flex items-center gap-1 text-sm font-semibold">
+              Prosit
+              <input name="numero" defaultValue={p.numero} autoFocus className="field w-16" placeholder="n°" aria-label="Numéro du prosit" />
+            </label>
+            <input name="theme" defaultValue={p.theme} className="field min-w-0 flex-1" placeholder="Thème (ex. SI et Sécurité)" aria-label="Thème" />
             <button className="btn btn-primary">OK</button>
           </form>
         ) : (
           <Link href={`/prosits/${p.id}`} className="block">
-            <span className="block truncate font-semibold">{p.nom || "Sans nom"}</span>
+            <span className="block truncate">
+              <span className="font-semibold">{prositTitle(p).title}</span>
+              {p.theme && <span className="text-muted"> — {p.theme}</span>}
+            </span>
             <span className="block truncate text-xs text-muted">
-              {[p.theme, p.numero && `n° ${p.numero}`, p.date && formatDateFr(p.date)].filter(Boolean).join(" · ") || "—"}
+              {[p.date && formatDateFr(p.date), "aller + retour"].filter(Boolean).join(" · ")}
             </span>
           </Link>
         )}
@@ -202,7 +212,7 @@ export function PrositList({ initial, initialDossiers }: { initial: PrositRow[];
           onChange={(e) => move(p.id, e.target.value || null)}
           disabled={busy}
           title="Ranger dans une matière"
-          aria-label={`Ranger « ${p.nom} » dans une matière`}
+          aria-label={`Ranger « ${prositLabel(p)} » dans une matière`}
         >
           <option value="">Non classé</option>
           {dossiers.map((a) => (
@@ -215,7 +225,7 @@ export function PrositList({ initial, initialDossiers }: { initial: PrositRow[];
             </optgroup>
           ))}
         </select>
-        <button className="btn btn-ghost btn-icon" title="Renommer" aria-label="Renommer" onClick={() => setRenaming(p.id)}><IconEdit /></button>
+        <button className="btn btn-ghost btn-icon" title="Modifier le numéro et le thème" aria-label="Modifier le numéro et le thème" onClick={() => setRenaming(p.id)}><IconEdit /></button>
         <button className="btn btn-ghost btn-icon" title="Dupliquer" aria-label="Dupliquer" onClick={() => duplicate(p.id)} disabled={busy}><IconCopy /></button>
         <button className="btn btn-ghost btn-icon text-danger" title="Supprimer" aria-label="Supprimer" onClick={() => remove(p)} disabled={busy}><IconTrash /></button>
       </div>
@@ -224,7 +234,7 @@ export function PrositList({ initial, initialDossiers }: { initial: PrositRow[];
 
   const list = (ps: PrositRow[], emptyText: string) =>
     ps.length ? (
-      <ul className="divide-y divide-line border-t border-line">{ps.map(prositRow)}</ul>
+      <ul className="divide-y divide-line border-t border-line">{[...ps].sort(compareProsits).map(prositRow)}</ul>
     ) : (
       <p className="border-t border-line px-4 py-3 text-sm text-muted">{emptyText}</p>
     );

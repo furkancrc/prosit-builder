@@ -241,7 +241,7 @@ export function createProsit(meta: Partial<Meta>, contents?: Partial<Record<DocT
     : undefined;
   if (matiereId && !place) throw new UnknownMatiereError();
   const m: Meta = {
-    nom: meta.nom ?? "Nouveau prosit",
+    nom: meta.nom ?? "",
     theme: meta.theme ?? "",
     numero: meta.numero ?? "",
     bloc: meta.bloc ?? place?.bloc ?? s.bloc,

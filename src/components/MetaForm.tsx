@@ -4,7 +4,6 @@ import type { DocType, Meta, MetaPatch } from "@/lib/schema";
 import { IconReset } from "./icons";
 
 const FIELDS: { key: keyof Meta; label: string; type?: string; placeholder: string; span?: string }[] = [
-  { key: "nom", label: "Nom du prosit", placeholder: "Prosit aller SI - 1", span: "sm:col-span-2" },
   { key: "theme", label: "Thème / matière", placeholder: "SI : Administration et Sécurité", span: "sm:col-span-2" },
   { key: "numero", label: "Numéro", placeholder: "1" },
   { key: "date", label: "Date", type: "date", placeholder: "" },
