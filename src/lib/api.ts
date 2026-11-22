@@ -10,7 +10,12 @@ export async function handle(fn: () => Promise<Response> | Response): Promise<Re
   try {
     return await fn();
   } catch (e) {
-    if (e instanceof ZodError) return jsonError(400, "Données invalides", e.flatten());
+    if (e instanceof ZodError) {
+      // message lisible : premier problème avec son emplacement (ex. « content › pistes › 3 › text : trop long »)
+      const first = e.issues[0];
+      const where = first?.path.length ? `${first.path.join(" › ")} : ` : "";
+      return jsonError(400, `Données refusées (${where}${first?.message ?? "invalide"})`, e.flatten());
+    }
     if (e instanceof SyntaxError) return jsonError(400, "JSON invalide");
     console.error(e);
     return jsonError(500, "Erreur interne");

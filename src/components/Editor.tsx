@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentRow, PrositRow } from "@/lib/db";
-import { api } from "@/lib/client-api";
+import { api, saveApi } from "@/lib/client-api";
 import { buildFilename } from "@/lib/filename";
 import { effectiveMeta } from "@/lib/meta";
 import { channelName, type PresentationMessage } from "@/lib/presentation";
@@ -94,7 +94,7 @@ export function Editor({ prosit: initialProsit, documents, settings: initialSett
     return { base: Object.fromEntries(META_KEYS.map((k) => [k, initialProsit[k] ?? ""])) as Meta, docs };
   });
   const { base, docs } = history.state;
-  const { schedule, flush, status, error } = useSaver();
+  const { schedule, flush, retry, status, error } = useSaver();
 
   const doc = docs[tab];
   // Retour : ce qui est affiché / exporté = retour fusionné avec l'aller (sans toucher aux données saisies)
@@ -127,18 +127,18 @@ export function Editor({ prosit: initialProsit, documents, settings: initialSett
     (next: EditorState, prev: EditorState) => {
       if (next.base !== prev.base) {
         const body = JSON.stringify(next.base);
-        schedule("prosit", () => api(`/api/prosits/${prositId}`, { method: "PATCH", body }));
+        schedule("prosit", () => saveApi(`/api/prosits/${prositId}`, { method: "PATCH", body }));
       }
       for (const type of ["aller", "retour"] as const) {
         const a = next.docs[type];
         const b = prev.docs[type];
         if (a.content !== b.content) {
           const body = JSON.stringify({ content: a.content });
-          schedule(`content:${a.id}`, () => api(`/api/documents/${a.id}`, { method: "PATCH", body }));
+          schedule(`content:${a.id}`, () => saveApi(`/api/documents/${a.id}`, { method: "PATCH", body }));
         }
         if (a.overrides !== b.overrides) {
           const body = JSON.stringify({ metaOverrides: a.overrides });
-          schedule(`meta:${a.id}`, () => api(`/api/documents/${a.id}`, { method: "PATCH", body }));
+          schedule(`meta:${a.id}`, () => saveApi(`/api/documents/${a.id}`, { method: "PATCH", body }));
         }
       }
     },
@@ -495,7 +495,7 @@ ${add}` : add;
               ))}
             </select>
           </label>
-          <SaveIndicator status={status} error={error} />
+          <SaveIndicator status={status} error={error} onRetry={retry} />
           <div className="flex items-center gap-0.5">
             <button className="btn btn-ghost btn-icon" onClick={undo} disabled={!history.canUndo} title="Annuler (Ctrl+Z)" aria-label="Annuler">
               <IconUndo />
