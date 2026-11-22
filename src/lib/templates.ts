@@ -1,4 +1,4 @@
-import type { Content, DocType, FieldValue, ListItem } from "./schema";
+import { normalizeList, type Content, type DocType, type FieldValue, type ListItem } from "./schema";
 
 /**
  * Style de liste :
@@ -233,21 +233,84 @@ export function mergeAllerIntoRetour(aller: Content, retour: Content): { content
     const a = src[f.key];
     const r = out[f.key];
     if (typeof a === "string") {
+      // texte / rôle vide dans le retour → celui de l'aller
       if (typeof r === "string" && !r.trim() && a.trim()) {
         out[f.key] = a;
         added++;
       }
     } else if (Array.isArray(a) && Array.isArray(r)) {
-      const norm = (t: string) => t.trim().toLowerCase();
-      const have = new Set(r.map((i) => norm(i.text)));
-      const missing = a.filter((i) => i.text.trim() && !have.has(norm(i.text)));
-      if (missing.length) {
-        out[f.key] = [...r.filter((i) => i.text.trim()), ...missing.map((i) => ({ id: `${i.id}-r`, text: i.text, level: i.level }))];
-        added += missing.length;
+      const { items, added: n } = mergeLists(a, r);
+      if (n) {
+        out[f.key] = items;
+        added += n;
       }
     }
   }
   return { content: out, added };
+}
+
+/** Clé de comparaison : minuscules, sans accents ni ponctuation, sans le marquage **gras**. */
+function textKey(s: string): string {
+  return s
+    .replace(/\*\*/g, "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Deux éléments parlent-ils de la même chose ? Même texte normalisé, l'un qui prolonge l'autre
+ * (« Routeur » / « Routeur : équipement… »), ou mots très largement communs (petite reformulation).
+ */
+export function sameItem(a: string, b: string): boolean {
+  const ka = textKey(a);
+  const kb = textKey(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  const [short, long] = ka.length <= kb.length ? [ka, kb] : [kb, ka];
+  if (short.length >= 6 && long.startsWith(short + " ")) return true;
+  const wa = new Set(ka.split(" ").filter((w) => w.length > 2));
+  const wb = new Set(kb.split(" ").filter((w) => w.length > 2));
+  if (wa.size < 3 || wb.size < 3) return false;
+  let common = 0;
+  for (const w of wa) if (wb.has(w)) common++;
+  return common / Math.min(wa.size, wb.size) >= 0.8;
+}
+
+/**
+ * Fusionne une liste de l'aller dans celle du retour : les éléments du retour (avec leurs
+ * définitions, statuts, images…) sont gardés tels quels ; chaque élément de l'aller absent
+ * du retour est inséré juste après l'élément qui le précédait dans l'aller, pour garder l'ordre.
+ */
+function mergeLists(aller: ListItem[], retour: ListItem[]): { items: ListItem[]; added: number } {
+  const items = retour.filter((i) => i.text.trim() || i.detail?.trim() || i.blocks?.length);
+  let added = 0;
+  let cursor = -1; // position (dans items) du dernier élément de l'aller retrouvé ou inséré
+  for (const a of aller) {
+    if (!a.text.trim()) continue;
+    const found = items.findIndex((r) => sameItem(r.text, a.text));
+    if (found >= 0) {
+      cursor = found;
+      continue;
+    }
+    // insérer après le curseur, et après les sous-éléments de l'élément qui s'y trouve
+    let at = cursor + 1;
+    if (cursor >= 0) while (at < items.length && items[at].level > items[cursor].level) at++;
+    items.splice(at, 0, { id: `${a.id}-r`, text: a.text, level: a.level });
+    cursor = at;
+    added++;
+  }
+  return { items: normalizeList(items), added };
+}
+
+/**
+ * Contenu effectif du prosit retour (export, aperçu, présentation) : le retour enrichi de tout
+ * ce que l'aller contient et que le retour n'a pas encore, sans modifier les données saisies.
+ */
+export function effectiveRetourContent(aller: Content, retour: Content): Content {
+  return mergeAllerIntoRetour(aller, retour).content;
 }
 
 export function isContentEmpty(c: Content): boolean {
