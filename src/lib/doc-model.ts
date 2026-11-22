@@ -1,6 +1,6 @@
 import type { Content, DocType, ListItem, Meta, RichBlock } from "./schema";
 import { normalizeList } from "./schema";
-import { coerceContent, getTemplate, sectionNumbers, type ListStyle } from "./templates";
+import { coerceContent, getTemplate, type ListStyle } from "./templates";
 import { formatDateFr } from "./meta";
 
 /** Représentation intermédiaire partagée par l'aperçu HTML et l'export .docx. */
@@ -28,12 +28,19 @@ export interface DocModel {
 export function buildDocModel(meta: Meta, type: DocType, rawContent: Content): DocModel {
   const tpl = getTemplate(type);
   const content = coerceContent(tpl, rawContent);
-  const nums = sectionNumbers(tpl);
   const blocks: Block[] = [];
   let listInstance = 0;
 
-  tpl.sections.forEach((section, si) => {
-    const n = nums[si];
+  // Retour : les sections propres au retour (Synthèse, Questions, AAV, Sources) restées vides sont
+  // masquées ; la numérotation romaine suit les sections réellement affichées.
+  const allerTitles = new Set(getTemplate("aller").sections.map((s) => s.title));
+  const isFilled = (v: Content[string] | undefined) =>
+    typeof v === "string" ? v.trim() !== "" : Array.isArray(v) && v.some((i) => i.text.trim() || i.detail?.trim() || i.blocks?.length);
+  const visible = tpl.sections.filter((s) => type !== "retour" || allerTitles.has(s.title) || s.fields.some((f) => isFilled(content[f.key])));
+  let counter = 0;
+
+  visible.forEach((section) => {
+    const n = section.unnumbered ? undefined : ++counter;
     blocks.push({ kind: "section", title: section.title.toUpperCase(), num: n ? toRoman(n) : undefined });
 
     const roles = section.fields.filter((f) => f.kind === "role");

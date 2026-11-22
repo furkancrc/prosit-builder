@@ -1,5 +1,6 @@
 import { handle, jsonError } from "@/lib/api";
-import { getDocument, getProsit, getSettings } from "@/lib/db";
+import { getDocument, getDocuments, getProsit, getSettings } from "@/lib/db";
+import { effectiveRetourContent } from "@/lib/templates";
 import { buildDocx } from "@/lib/docx/builder";
 import { loadAssets } from "@/lib/assets";
 import { collectAssetIds } from "@/lib/doc-model";
@@ -25,8 +26,11 @@ export function GET(req: Request, { params }: Ctx) {
 
     const settings = getSettings();
     const meta = effectiveMeta(prosit, doc.type, doc.metaOverrides);
-    const assets = loadAssets(collectAssetIds(doc.content));
-    const docx = await buildDocx({ meta, type: doc.type, content: doc.content, settings, assets });
+    // le retour est exporté fusionné avec l'aller (tout ce que l'aller contient et que le retour n'a pas)
+    const aller = doc.type === "retour" ? getDocuments(doc.prositId).find((d) => d.type === "aller") : undefined;
+    const content = aller ? effectiveRetourContent(aller.content, doc.content) : doc.content;
+    const assets = loadAssets(collectAssetIds(content));
+    const docx = await buildDocx({ meta, type: doc.type, content, settings, assets });
 
     let body: Buffer = docx;
     if (format === "pdf") {

@@ -86,6 +86,12 @@ export function Editor({ prosit: initialProsit, documents, settings }: Props) {
   const { schedule, flush, status, error } = useSaver();
 
   const doc = docs[tab];
+  // Retour : ce qui est affiché / exporté = retour fusionné avec l'aller (sans toucher aux données saisies)
+  const merged = useMemo(
+    () => (tab === "retour" ? mergeAllerIntoRetour(docs.aller.content, doc.content) : { content: doc.content, added: 0 }),
+    [tab, docs.aller.content, doc.content],
+  );
+  const renderContent = merged.content;
   const template = getTemplate(tab);
   const sectionNums = sectionNumbers(template);
   const meta = useMemo(() => effectiveMeta(base, tab, tab === "retour" ? doc.overrides : null), [base, tab, doc.overrides]);
@@ -321,7 +327,7 @@ ${add}` : add;
     };
   }, [prositId]);
 
-  const presentationState: PresentationMessage = useMemo(() => ({ kind: "state", tab, meta, content: doc.content, active }), [tab, meta, doc.content, active]);
+  const presentationState: PresentationMessage = useMemo(() => ({ kind: "state", tab, meta, content: renderContent, active }), [tab, meta, renderContent, active]);
   useEffect(() => {
     channel.current?.postMessage(presentationState);
   }, [presentationState]);
@@ -570,11 +576,23 @@ ${add}` : add;
           {tab === "retour" && (
             <div className="flex flex-wrap items-center gap-3 rounded-sm border border-dashed border-line bg-surface px-4 py-3 text-xs text-muted">
               <p className="min-w-0 flex-1">
-                Le retour reprend les éléments de l’aller. Ajoute une <strong className="text-ink">définition</strong> sous chaque élément et un{" "}
-                <strong className="text-ink">statut</strong> à chaque piste de solution (vert = validée, orange = partielle, rouge = non validée).
+                Le retour est une <strong className="text-ink">fusion de l’aller</strong> enrichie : ajoute une <strong className="text-ink">définition</strong> sous
+                chaque élément et un <strong className="text-ink">statut</strong> à chaque piste (vert = validée, orange = partielle, rouge = non validée).
+                {merged.added > 0 && (
+                  <>
+                    {" "}
+                    <span className="text-ink">
+                      {merged.added} élément(s) de l’aller absent(s) ici sont déjà fusionnés dans l’aperçu et l’export.
+                    </span>
+                  </>
+                )}
               </p>
-              <button className="btn text-xs" onClick={() => syncFromAller()} title="Ajoute au retour les éléments de l’aller qui manquent, sans rien effacer">
-                Reprendre depuis l’aller
+              <button
+                className="btn text-xs"
+                onClick={() => syncFromAller()}
+                title="Copie dans le formulaire du retour les éléments de l’aller qui manquent (pour les compléter), sans rien effacer"
+              >
+                Reprendre depuis l’aller{merged.added > 0 ? ` (${merged.added})` : ""}
               </button>
             </div>
           )}
@@ -626,7 +644,7 @@ ${add}` : add;
             <p className="mb-2 text-xs text-muted">
               Aperçu · <code>{filename}.docx</code>
             </p>
-            <Preview meta={meta} type={tab} content={doc.content} settings={settings} />
+            <Preview meta={meta} type={tab} content={renderContent} settings={settings} />
           </div>
         </div>
       </div>
