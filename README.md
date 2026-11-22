@@ -10,7 +10,7 @@ Web app pour rédiger les **prosits aller / retour** du CESI et les exporter en 
 - Onglets **Aller** et **Retour**. Le retour reprend les métadonnées de l'aller, et chacune peut être surchargée.
 - Formulaire par rubrique avec des listes : glisser-déposer, sous-éléments, numérotation automatique et raccourcis clavier (Entrée, Tab, Maj+Tab, Alt+↑/↓, Retour arrière sur une ligne vide).
 - Sauvegarde automatique avec indicateur « Enregistré », et aperçu du document en direct.
-- **Prosit retour / CER**. Le retour reprend automatiquement les éléments de l'aller (bouton « Reprendre depuis l'aller »), puis permet :
+- **Prosit retour / CER** : une **fusion intelligente de l'aller**. À l'export, dans l'aperçu et dans la présentation, tout ce que l'aller contient et que le retour n'a pas encore est fusionné. Les textes et rôles vides sont repris, et les éléments de liste manquants sont insérés à leur place, sans doublon malgré les accents ou les reformulations. Ce qui est écrit dans le retour (définitions, statuts, images) prime toujours. Le bouton « Reprendre depuis l'aller » copie ces éléments dans le formulaire pour les compléter. Les sections propres au retour restées vides sont masquées. Le retour permet aussi :
   - une **définition / explication** sous chaque élément ; les mots clés sont exportés en tableau « Mot clé | Définition » ;
   - un **statut** sur les pistes de solution : ✔ validée / ◐ partielle / ✘ non validée, surligné en vert, orange ou rouge ;
   - les **AAV** (acquis d'apprentissage visés) sans couleur : le nombre entre crochets indique leur importance (« [3] Schématiser le SI… ») ;
