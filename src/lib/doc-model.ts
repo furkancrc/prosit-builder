@@ -7,7 +7,7 @@ import { formatDateFr } from "./meta";
 export const DOC_STYLES = {
   cesi: { label: "Boucle PBL (CESI)", description: "Bandeau noir, bloc titre jaune, rubriques I à XII, puces roses", font: "Arial" },
   classique: { label: "Classique (Word)", description: "Grand titre bleu, rubriques regroupées « I. » / « 1) », puces « - »", font: "Calibri" },
-  rapport: { label: "Rapport (Times)", description: "Times, « Prosit retour : » souligné, rubriques orange, sous-titres soulignés, puces « • »", font: "Times New Roman" },
+  rapport: { label: "Rapport (Times)", description: "Times, « Prosit retour / CER : » souligné, rubriques orange, sous-titres soulignés, puces « • »", font: "Times New Roman" },
 } as const;
 export type DocStyle = keyof typeof DOC_STYLES;
 
@@ -164,10 +164,11 @@ export function buildDocModel(meta: Meta, type: DocType, rawContent: Content, st
   return {
     type,
     style,
+    // le prosit retour sert aussi de CER : il est titré « Prosit retour / CER » dans les trois styles
     heading:
       style === "rapport"
-        ? `Prosit ${type} :`
-        : `Prosit ${type === "aller" ? "Aller" : "Retour"}${meta.numero ? ` n°${meta.numero}` : ""}`,
+        ? `Prosit ${type === "aller" ? "aller" : "retour / CER"} :`
+        : `Prosit ${type === "aller" ? "Aller" : "Retour / CER"}${meta.numero ? ` n°${meta.numero}` : ""}`,
     pbl: `Boucle PBL${meta.numero ? ` ${meta.numero}` : ""} : ${meta.theme || meta.nom || "…"}`,
     banner: type === "aller" ? "PROSIT ALLER" : "PROSIT RETOUR / CER",
     title: `Boucle PBL : ${meta.theme || meta.nom || "…"}`,

@@ -81,14 +81,17 @@ describe("styles de mise en page", () => {
 describe("style Rapport (Times)", () => {
   it("reprend la mise en page de PrositRetourPBL2", async () => {
     const m = buildDocModel(meta, "retour", content, "rapport");
-    expect(m.heading).toBe("Prosit retour :");
+    expect(m.heading).toBe("Prosit retour / CER :");
+    expect(buildDocModel(meta, "retour", content, "classique").heading).toBe("Prosit Retour / CER n°2");
+    expect(buildDocModel(meta, "retour", content, "cesi").banner).toBe("PROSIT RETOUR / CER");
+    expect(buildDocModel(meta, "aller", content, "rapport").heading).toBe("Prosit aller :");
     expect(m.pbl).toBe("Boucle PBL 2 : SI : Administration");
     const zip = await JSZip.loadAsync(
       await buildDocx({ meta, type: "retour", content, settings: { ...DEFAULT_SETTINGS, docStyle: "rapport", docFont: "Times New Roman" } }),
     );
     const doc = (await zip.file("word/document.xml")?.async("string")) ?? "";
     const numbering = (await zip.file("word/numbering.xml")?.async("string")) ?? "";
-    expect(doc).toContain("Prosit retour :");
+    expect(doc).toContain("Prosit retour / CER :");
     expect(doc).toContain("Boucle PBL 2 : SI : Administration");
     expect(doc).toContain("D0583A"); // titres orange
     expect(doc).toContain("Prendre connaissance de la situation et clarifier.");
