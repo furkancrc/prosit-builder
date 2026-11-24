@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import type { Content, DocType, ListItem, MetaPatch, PisteStatus, RichBlock } from "../schema";
 import { MAX_LEVEL, STATUS_META, normalizeList } from "../schema";
 import { allFields, emptyContent, getTemplate, type FieldDef, type SectionDef } from "../templates";
+import { isTitleLine } from "../format";
 
 interface RawPara {
   kind: "p";
@@ -254,6 +255,11 @@ export function importFromXml(
       const t = lookup(p.text, false);
       if (t) {
         current = t;
+        return;
+      }
+      // titre de regroupement (« Analyser le besoin. », « Prendre connaissance… ») : zone neutre, pas du contenu
+      if (isTitleLine(p.text)) {
+        current = undefined;
         return;
       }
     }

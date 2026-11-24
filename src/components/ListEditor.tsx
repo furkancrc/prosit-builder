@@ -36,9 +36,11 @@ interface Props {
   rich?: boolean;
   /** Bouton de l'assistant sur chaque élément (corriger, améliorer, rédiger la définition). */
   onAssist?: (item: ListItem, action: AssistAction) => void;
+  /** Plan d'action : description, points, étapes et intérêt structurés sous chaque élément. */
+  plan?: boolean;
 }
 
-export function ListEditor({ items, style, onChange, placeholder, label, detailLabel, withStatus, rich, onAssist }: Props) {
+export function ListEditor({ items, style, onChange, placeholder, label, detailLabel, withStatus, rich, onAssist, plan }: Props) {
   const [focusId, setFocusId] = useState<string | null>(null);
   const inputs = useRef(new Map<string, HTMLTextAreaElement>());
   const numbers = numberItems(items);
@@ -118,6 +120,7 @@ export function ListEditor({ items, style, onChange, placeholder, label, detailL
                 detailLabel={detailLabel}
                 withStatus={withStatus}
                 rich={rich}
+                plan={plan}
                 onKeyDown={(e) => onKeyDown(e, i)}
                 canIndent={i > 0 && it.level < MAX_LEVEL && it.level <= items[i - 1].level}
                 canOutdent={it.level > 0}
@@ -148,6 +151,7 @@ interface RowProps {
   detailLabel?: string;
   withStatus?: boolean;
   rich?: boolean;
+  plan?: boolean;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   canIndent: boolean;
   canOutdent: boolean;
@@ -200,7 +204,7 @@ function Row(p: RowProps) {
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition, marginLeft: `${p.item.level * 1.5}rem` }}
-      className={`group rounded-sm ${isDragging ? "relative z-10 bg-surface-2 shadow-md" : ""} ${p.detailLabel || p.withStatus || p.rich ? "pb-2" : ""}`}
+      className={`group rounded-sm ${isDragging ? "relative z-10 bg-surface-2 shadow-md" : ""} ${p.detailLabel || p.withStatus || p.rich || p.plan ? "pb-2" : ""}`}
       onPaste={p.rich ? onPaste : undefined}
     >
       <div className="flex items-start gap-1">
@@ -235,7 +239,11 @@ function Row(p: RowProps) {
             items={[
               { label: "Corriger les fautes", onSelect: () => p.onAssist!("fix"), disabled: !p.item.text.trim() },
               { label: "Améliorer la rédaction", onSelect: () => p.onAssist!("improve"), disabled: !p.item.text.trim() },
-              ...(p.detailLabel ? [{ label: `Rédiger « ${p.detailLabel} »`, onSelect: () => p.onAssist!("write"), disabled: !p.item.text.trim() }] : []),
+              ...(p.plan
+                ? [{ label: "Rédiger l’élément du plan", onSelect: () => p.onAssist!("write"), disabled: !p.item.text.trim() }]
+                : p.detailLabel
+                  ? [{ label: `Rédiger « ${p.detailLabel} »`, onSelect: () => p.onAssist!("write"), disabled: !p.item.text.trim() }]
+                  : []),
             ]}
           />
         )}
@@ -246,10 +254,11 @@ function Row(p: RowProps) {
         <IconBtn label="Supprimer" onClick={p.onDelete} className="hover:text-danger"><IconTrash /></IconBtn>
       </div>
       </div>
-      {(p.withStatus || p.detailLabel || p.rich) && (
+      {(p.withStatus || p.detailLabel || p.rich || p.plan) && (
         <div className="ml-[3.25rem] mt-1 space-y-1 border-l-2 border-line pl-2">
           {p.withStatus && <StatusPicker value={p.item.status} onChange={(status) => p.onPatch({ status })} />}
-          {p.detailLabel && (
+          {p.plan && <PlanFields item={p.item} onPatch={p.onPatch} />}
+          {p.detailLabel && !p.plan && (
             <AutoTextarea
               value={p.item.detail ?? ""}
               placeholder={p.detailLabel + "…"}
@@ -316,5 +325,79 @@ function AutoTextarea({ value, onChange, placeholder, ...rest }: { value: string
       className="field resize-none overflow-hidden bg-surface-2 py-1.5 text-[0.85rem] leading-snug"
       {...rest}
     />
+  );
+}
+
+/**
+ * Élément du plan d'action : champs structurés (description, points « label : texte », étapes numérotées, intérêt).
+ * Repliés tant qu'ils sont vides, pour garder la liste compacte.
+ */
+function PlanFields({ item, onPatch }: { item: ListItem; onPatch: (patch: Partial<ListItem>) => void }) {
+  const points = item.points ?? [];
+  const etapes = item.etapes ?? [];
+  const filled = !!(item.description || points.length || etapes.length || item.interet || item.detail);
+  const [open, setOpen] = useState(filled);
+  useEffect(() => {
+    if (filled) setOpen(true);
+  }, [filled]);
+  const name = item.text || "élément";
+  if (!open)
+    return (
+      <button type="button" className="text-xs text-muted hover:text-ink" onClick={() => setOpen(true)}>
+        + Détailler (description, points, étapes, intérêt)
+      </button>
+    );
+  const setPoint = (i: number, patch: Partial<{ label: string; texte: string }>) =>
+    onPatch({ points: points.map((pt, j) => (j === i ? { ...pt, ...patch, ...(patch.label !== undefined && !patch.label ? { label: undefined } : {}) } : pt)) });
+  return (
+    <div className="space-y-1.5 text-[0.85rem]">
+      <AutoTextarea value={item.description ?? ""} placeholder="Description (1 à 2 phrases)…" aria-label={`Description de « ${name} »`} onChange={(description) => onPatch({ description })} />
+      <div className="space-y-1">
+        {points.map((pt, i) => (
+          <div key={i} className="flex items-start gap-1">
+            <span className="mt-1.5 w-4 shrink-0 text-center text-muted">•</span>
+            <input
+              className="field w-32 shrink-0 py-1.5 text-[0.85rem] font-semibold"
+              value={pt.label ?? ""}
+              placeholder="Libellé"
+              aria-label={`Libellé du point ${i + 1}`}
+              onChange={(e) => setPoint(i, { label: e.target.value })}
+            />
+            <div className="min-w-0 flex-1">
+              <AutoTextarea value={pt.texte} placeholder="Texte du point…" aria-label={`Texte du point ${i + 1}`} onChange={(texte) => setPoint(i, { texte })} />
+            </div>
+            <IconBtn label="Retirer ce point" onClick={() => onPatch({ points: points.filter((_, j) => j !== i) })} className="hover:text-danger">
+              <IconTrash width={13} height={13} />
+            </IconBtn>
+          </div>
+        ))}
+        {etapes.map((e, i) => (
+          <div key={`e${i}`} className="flex items-start gap-1">
+            <span className="mt-1.5 w-4 shrink-0 text-right tabular-nums text-muted">{i + 1}.</span>
+            <div className="min-w-0 flex-1">
+              <AutoTextarea value={e} placeholder="Étape…" aria-label={`Étape ${i + 1}`} onChange={(v) => onPatch({ etapes: etapes.map((x, j) => (j === i ? v.replace(/\n/g, " ") : x)) })} />
+            </div>
+            <IconBtn label="Retirer cette étape" onClick={() => onPatch({ etapes: etapes.filter((_, j) => j !== i) })} className="hover:text-danger">
+              <IconTrash width={13} height={13} />
+            </IconBtn>
+          </div>
+        ))}
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="text-xs text-muted hover:text-ink" onClick={() => onPatch({ points: [...points, { texte: "" }] })}>
+            + Point
+          </button>
+          <button type="button" className="text-xs text-muted hover:text-ink" onClick={() => onPatch({ etapes: [...etapes, ""] })}>
+            + Étape
+          </button>
+        </div>
+      </div>
+      <AutoTextarea value={item.interet ?? ""} placeholder="Intérêt (ce que ça apporte)…" aria-label={`Intérêt de « ${name} »`} onChange={(interet) => onPatch({ interet })} />
+      {item.detail && (
+        <div>
+          <p className="text-xs text-muted">Ancien texte libre (« Mettre en forme » le range dans les champs ci-dessus) :</p>
+          <AutoTextarea value={item.detail} aria-label={`Texte libre de « ${name} »`} onChange={(detail) => onPatch({ detail: detail || undefined })} />
+        </div>
+      )}
+    </div>
   );
 }

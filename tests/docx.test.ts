@@ -288,6 +288,22 @@ describe("import de l'ancien format (styles Titre 1 / Titre 2)", () => {
   });
 });
 
+describe("import : titres de regroupement en texte simple", () => {
+  it("« Analyser le besoin. » n'est pas rangé dans le contexte", () => {
+    const xml = doc([
+      p("Titre", "Prosit aller n° 2"),
+      p("Titre2", "Contexte :"),
+      p("", "Une PME."),
+      p("", "Analyser le besoin."),
+      p("Titre2", "Problématique :"),
+      p("", "Comment faire ?"),
+    ]);
+    const r = importFromXml(xml);
+    expect(r.content.contexte).toBe("Une PME.");
+    expect(r.content.probleme).toBe("Comment faire ?");
+  });
+});
+
 describe("buildDocModel", () => {
   it("numérote les sections sauf Rôles et signale les champs vides", () => {
     const m = buildDocModel(meta, "aller", {});

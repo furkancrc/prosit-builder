@@ -149,3 +149,14 @@ describe("boutons assistant ciblés", () => {
     expect(targetPatch("pas de bloc")).toBeNull();
   });
 });
+
+describe("textToListItems : libellé court uniquement", () => {
+  it("ne coupe pas une phrase longue sur son « : »", () => {
+    let n = 0;
+    const text = ["- Les comptes utilisateurs sont placés dans des groupes globaux : bonne pratique", "- DNS : résolution de noms"].join(String.fromCharCode(10));
+    const items = textToListItems(text, { withDetail: true, newId: () => `i${++n}` });
+    expect(items[0].text).toBe("Les comptes utilisateurs sont placés dans des groupes globaux : bonne pratique");
+    expect(items[0].detail).toBeUndefined();
+    expect([items[1].text, items[1].detail]).toEqual(["DNS", "résolution de noms"]);
+  });
+});

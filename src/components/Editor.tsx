@@ -788,6 +788,7 @@ function FieldEditor({
           detailLabel={field.detail}
           withStatus={field.status}
           rich={field.rich}
+          plan={field.plan}
           onAssist={(item, action) =>
             onAssist(
               {

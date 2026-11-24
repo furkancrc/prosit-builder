@@ -47,8 +47,10 @@ export function textToListItems(text: string, opts: { withDetail: boolean; newId
     const item: ListItem = { id: opts.newId(), text: line, level };
     if (opts.withDetail) {
       const m = line.match(/^(\*\*[^*]+\*\*|[^:]{1,120}?)\s*(?::|—|–)\s+(.+)$/);
-      if (m) {
-        item.text = m[1].replace(/^\*\*|\*\*$/g, "").trim();
+      // « terme : définition » seulement pour un terme court (1 à 6 mots) ; sinon la phrase reste entière
+      const term = m?.[1].replace(/^\*\*|\*\*$/g, "").trim() ?? "";
+      if (m && term.split(/\s+/).length <= 6) {
+        item.text = term;
         item.detail = m[2].trim();
       }
     } else {
