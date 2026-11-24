@@ -79,6 +79,49 @@ export async function* streamAgent(opts: { instructions: string; input: ChatMess
   }
 }
 
+/**
+ * Appel non diffusé à l'API chat completions de Perplexity avec une réponse au format JSON imposé
+ * (response_format json_schema). Renvoie le texte brut (à valider) et les sources.
+ */
+export async function completeJson(opts: {
+  system: string;
+  user: string;
+  schemaName: string;
+  schema: Record<string, unknown>;
+  signal?: AbortSignal;
+}): Promise<{ content: string; sources: Source[] }> {
+  // l'API chat completions attend le nom du modèle sans préfixe de fournisseur (« sonar », « sonar-pro »)
+  const model = assistantConfig().model.replace(/^perplexity\//, "");
+  const res = await fetch(CHAT_ENDPOINT, {
+    method: "POST",
+    signal: opts.signal,
+    headers: { Authorization: `Bearer ${process.env.PERPLEXITY_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: opts.system },
+        { role: "user", content: opts.user },
+      ],
+      response_format: { type: "json_schema", json_schema: { name: opts.schemaName, schema: opts.schema } },
+      max_tokens: 2000,
+    }),
+  });
+  const body = await res.text();
+  if (!res.ok) throw new PerplexityError(res.status, body);
+  let j: { choices?: { message?: { content?: string } }[]; search_results?: { url?: string; title?: string }[]; citations?: unknown[] };
+  try {
+    j = JSON.parse(body);
+  } catch {
+    throw new PerplexityError(502, "réponse illisible");
+  }
+  const sources = Array.isArray(j.search_results)
+    ? toSources(j.search_results)
+    : (j.citations ?? []).filter((u): u is string => typeof u === "string").map((url) => ({ url, title: url }));
+  return { content: j.choices?.[0]?.message?.content ?? "", sources };
+}
+
+const CHAT_ENDPOINT = "https://api.perplexity.ai/chat/completions";
+
 /** Interprète un évènement SSE (Agent API, avec repli sur l'ancien format Sonar). Exporté pour les tests. */
 export function parseEvent(ev: Record<string, unknown>): AgentEvent[] {
   const out: AgentEvent[] = [];

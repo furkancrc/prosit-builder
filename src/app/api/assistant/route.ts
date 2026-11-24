@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { handle, jsonError } from "@/lib/api";
-import { getDocuments, getProsit } from "@/lib/db";
-import { effectiveMeta } from "@/lib/meta";
-import { DocTypeSchema, type Meta } from "@/lib/schema";
-import { docToText } from "@/lib/ai/doc-text";
-import { fetchLink } from "@/lib/ai/links";
+import { getProsit } from "@/lib/db";
+import { DocTypeSchema } from "@/lib/schema";
+import { prositContext } from "@/lib/ai/context";
 import { assistantConfig, PerplexityError, streamAgent } from "@/lib/ai/perplexity";
-import { buildContext, buildInstructions } from "@/lib/ai/prompt";
+import { buildInstructions } from "@/lib/ai/prompt";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -28,8 +26,6 @@ const BodySchema = z.object({
     .refine((m) => m[m.length - 1].role === "user", "Le dernier message doit venir de l'utilisateur"),
 });
 
-const META_KEYS: (keyof Meta)[] = ["nom", "theme", "numero", "bloc", "date", "auteur", "groupe", "lien"];
-
 /**
  * Pose une question à l'assistant. Le serveur relit le prosit enregistré (aller + retour) et les liens d'aide,
  * puis renvoie la réponse en NDJSON : {t:"links"}, {t:"delta"}…, {t:"sources"}, {t:"done"} ou {t:"error"}.
@@ -42,28 +38,13 @@ export function POST(req: Request) {
     const prosit = getProsit(body.prositId);
     if (!prosit) return jsonError(404, "Prosit introuvable");
 
-    const docs = getDocuments(prosit.id);
-    const base = Object.fromEntries(META_KEYS.map((k) => [k, prosit[k] ?? ""])) as Meta;
-    const textOf = (type: "aller" | "retour") => {
-      const d = docs.find((x) => x.type === type);
-      return d ? docToText(effectiveMeta(base, type, type === "retour" ? d.metaOverrides : null), type, d.content) : "";
-    };
-
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const send = (o: unknown) => controller.enqueue(encoder.encode(JSON.stringify(o) + "\n"));
         try {
-          const links = await Promise.all(prosit.liensAide.map(fetchLink));
+          const { context, links } = (await prositContext(prosit.id, body.type, body.focus))!;
           send({ t: "links", links: links.map((l) => ({ url: l.url, ok: l.ok, title: l.title, error: l.error })) });
-
-          const context = buildContext({
-            type: body.type,
-            docText: textOf(body.type),
-            allerText: body.type === "retour" ? textOf("aller") : undefined,
-            focus: body.focus,
-            links,
-          });
           // Le contexte (document + ressources) est rattaché à la dernière question : il reflète toujours l'état actuel.
           const messages = body.messages.map((m, i) =>
             i === body.messages.length - 1 ? { role: m.role, content: `${context}\n\n---\nDemande de l'étudiant :\n${m.content}` } : m,

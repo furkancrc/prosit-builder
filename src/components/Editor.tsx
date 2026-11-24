@@ -18,6 +18,7 @@ import { toggleColorMode } from "@/lib/theme-client";
 import { AssistantPanel, type AssistantApi, type FocusField, type FocusSection } from "./AssistantPanel";
 import { AssistMenu } from "./AssistMenu";
 import { buildTargetPrompt, writeLabel, type AssistAction, type AssistTarget } from "@/lib/ai/targets";
+import { genKindFor, type StructuredPatch } from "@/lib/ai/structured";
 import { DownloadDialog } from "./DownloadDialog";
 import { HelpDialog, SECTION_KEYS } from "./HelpDialog";
 import { ListEditor } from "./ListEditor";
@@ -39,6 +40,7 @@ import {
   IconTrash,
   IconUndo,
   IconUpload,
+  IconWand,
 } from "./icons";
 
 const META_KEYS: (keyof Meta)[] = ["nom", "theme", "numero", "bloc", "date", "auteur", "groupe", "lien"];
@@ -235,13 +237,34 @@ export function Editor({ prosit: initialProsit, documents, settings: initialSett
 
   /** Bouton de l'assistant d'un élément ou d'un champ : ouvre le panneau et envoie la demande ciblée. */
   const assistTarget = (target: AssistTarget, action: AssistAction) => {
-    const { prompt, label } = buildTargetPrompt(target, action);
     setAssistantOpen(true);
+    // « Rédiger » un élément : réponse JSON structurée (définition, justification, élément du plan)
+    if (action === "write" && target.kind === "item" && target.gen) {
+      assistantApi.current?.generate(`${writeLabel(target)} · ${target.text.length > 60 ? target.text.slice(0, 59) + "…" : target.text}`, target);
+      return;
+    }
+    const { prompt, label } = buildTargetPrompt(target, action);
     assistantApi.current?.ask(prompt, label, target);
   };
 
+  /** Mise en forme déterministe d'une seule rubrique (après une génération ou une insertion). */
+  const formatField = (type: DocType, content: Content, key: string): Content => ({ ...content, [key]: formatProsit(content, type)[key] });
+
+  /** Bouton « Mettre en forme » : formateur déterministe sur tout le document (annulable). */
+  const formatDocument = () => {
+    const content = history.get().docs[tab].content;
+    const next = formatProsit(content, tab);
+    const n = countChanges(content, next);
+    if (!n) {
+      setNotice("Rien à mettre en forme : le document est déjà propre.");
+      return;
+    }
+    setDoc(tab, { content: next });
+    setNotice(`Mise en forme appliquée à ${n} rubrique${n > 1 ? "s" : ""} (Ctrl+Z pour annuler).`);
+  };
+
   /** Applique la réponse de l'assistant à l'élément / au champ visé (annulable). */
-  const applyToTarget = (target: AssistTarget, patch: { text?: string; detail?: string }) => {
+  const applyToTarget = (target: AssistTarget, patch: StructuredPatch) => {
     const content = history.get().docs[target.tab].content;
     const current = content[target.fieldKey];
     if (target.kind === "field") {
@@ -252,12 +275,11 @@ export function Editor({ prosit: initialProsit, documents, settings: initialSett
         setNotice("L’élément visé n’existe plus : copie la proposition à la main.");
         return;
       }
-      const next = current.map((i) =>
-        i.id === target.itemId
-          ? { ...i, ...(patch.text !== undefined ? { text: patch.text.replace(/\s*\n\s*/g, " ") } : {}), ...(patch.detail !== undefined ? { detail: patch.detail } : {}) }
-          : i,
-      );
-      setDoc(target.tab, { content: { ...content, [target.fieldKey]: next } });
+      const { text, ...rest } = patch;
+      const defined = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
+      const next = current.map((i) => (i.id === target.itemId ? { ...i, ...(text !== undefined && text.trim() ? { text: text.replace(/\s*\n\s*/g, " ") } : {}), ...defined } : i));
+      // mise en forme déterministe de la rubrique juste après la génération
+      setDoc(target.tab, { content: formatField(target.tab, { ...content, [target.fieldKey]: next }, target.fieldKey) });
     }
     setNotice(`Proposition appliquée à « ${target.kind === "item" ? target.text : target.fieldLabel} » (Ctrl+Z pour annuler).`);
   };
@@ -274,7 +296,7 @@ export function Editor({ prosit: initialProsit, documents, settings: initialSett
       value = mode === "append" && typeof current === "string" && current.trim() ? `${current.trimEnd()}
 ${add}` : add;
     }
-    setDoc(tab, { content: { ...history.get().docs[tab].content, [field.key]: value } });
+    setDoc(tab, { content: formatField(tab, { ...history.get().docs[tab].content, [field.key]: value }, field.key) });
     setNotice(`Proposition de l’assistant ${mode === "append" ? "ajoutée à" : "mise à la place de"} « ${field.label} » (Ctrl+Z pour annuler).`);
   };
 
@@ -517,6 +539,9 @@ ${add}` : add;
           <div className="flex w-full gap-2 sm:w-auto">
             <button className={`btn ${assistantOpen ? "border-ink" : ""}`} onClick={() => setAssistantOpen((o) => !o)} title="Assistant de rédaction (Perplexity)" aria-pressed={assistantOpen}>
               <IconSparkle /> <span className="hidden md:inline">Assistant</span>
+            </button>
+            <button className="btn" onClick={formatDocument} title="Mise en forme automatique : nettoie le texte, structure le plan d’action, fusionne les doublons (Ctrl+Z pour annuler)">
+              <IconWand /> <span className="hidden md:inline">Mettre en forme</span>
             </button>
             <button className="btn" onClick={openPresentation} title="Ouvrir la vue à projeter">
               <IconPresent /> <span className="hidden md:inline">Présentation</span>
@@ -765,7 +790,18 @@ function FieldEditor({
           rich={field.rich}
           onAssist={(item, action) =>
             onAssist(
-              { kind: "item", ...assistContext, fieldKey: field.key, fieldLabel: field.label, itemId: item.id, text: item.text, detail: item.detail, detailLabel: field.detail },
+              {
+                kind: "item",
+                ...assistContext,
+                fieldKey: field.key,
+                fieldLabel: field.label,
+                itemId: item.id,
+                text: item.text,
+                detail: item.detail,
+                detailLabel: field.plan ? "l’élément du plan" : field.detail,
+                gen: genKindFor(field) ?? undefined,
+                ...(field.plan ? { existing: { description: item.description, points: item.points, etapes: item.etapes, interet: item.interet } } : {}),
+              },
               action,
             )
           }

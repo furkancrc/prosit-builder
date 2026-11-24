@@ -4,6 +4,7 @@ import { Fragment, useEffect, useImperativeHandle, useRef, useState, type RefObj
 import { api } from "@/lib/client-api";
 import { extractInsertable, INSERT_FENCE } from "@/lib/ai/insert";
 import { targetPatch, type AssistTarget } from "@/lib/ai/targets";
+import { patchToMarkdown, type StructuredPatch } from "@/lib/ai/structured";
 import type { DocType } from "@/lib/schema";
 import { Inline } from "./RichView";
 import { IconCopy, IconLink, IconPlus, IconSend, IconSparkle, IconStop, IconTrash } from "./icons";
@@ -32,11 +33,17 @@ interface Msg {
   label?: string;
   /** Élément ou champ visé par un bouton de l'éditeur : la réponse peut lui être appliquée. */
   target?: AssistTarget;
+  /** Résultat d'une génération structurée, appliqué tel quel à l'élément. */
+  structured?: StructuredPatch;
+  /** Avertissement (réponse non conforme, mise en forme de repli). */
+  warning?: string;
 }
 
 /** Ce que l'éditeur peut demander au panneau (boutons des éléments et des champs). */
 export interface AssistantApi {
   ask: (prompt: string, label: string, target?: AssistTarget) => void;
+  /** Génération structurée d'un élément (définition, justification, élément du plan). */
+  generate: (label: string, target: AssistTarget) => void;
 }
 interface LinkStatus {
   url: string;
@@ -55,7 +62,7 @@ interface Props {
   /** Enregistre les modifications en attente avant que le serveur relise le prosit. */
   beforeAsk: () => Promise<void>;
   onInsert: (field: FocusField, text: string, mode: "append" | "replace") => void;
-  onApply: (target: AssistTarget, patch: { text?: string; detail?: string }) => void;
+  onApply: (target: AssistTarget, patch: StructuredPatch) => void;
   apiRef: RefObject<AssistantApi | null>;
 }
 
@@ -175,10 +182,51 @@ export function AssistantPanel({ open, onClose, prositId, tab, initialLinks, foc
     }
   }
 
+  async function generate(label: string, target: AssistTarget) {
+    if (busy || target.kind !== "item" || !target.gen) return;
+    setMessages((ms) => [...ms, { role: "user", content: label, label }, { role: "assistant", content: "", target }]);
+    setBusy(true);
+    const ctrl = new AbortController();
+    abort.current = ctrl;
+    const patchLast = (fn: (m: Msg) => Msg) => setMessages((ms) => [...ms.slice(0, -1), fn(ms[ms.length - 1])]);
+    try {
+      await beforeAsk();
+      const res = await fetch("/api/assistant/generate", {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prositId,
+          type: target.tab,
+          kind: target.gen,
+          section: target.section,
+          fieldLabel: target.fieldLabel,
+          text: target.text,
+          detail: target.detail,
+          existing: target.existing,
+        }),
+      });
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `Erreur ${res.status}`);
+      patchLast((m) => ({ ...m, content: patchToMarkdown(j.patch) || "(réponse vide)", structured: j.patch, warning: j.warning, sources: j.sources }));
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") patchLast((m) => ({ ...m, error: (e as Error).message }));
+    } finally {
+      setBusy(false);
+      abort.current = null;
+    }
+  }
+
   // L'éditeur appelle ask() depuis les boutons des éléments ; la référence suit le dernier rendu.
   const askRef = useRef(ask);
   askRef.current = ask;
-  useImperativeHandle(apiRef, () => ({ ask: (prompt, label, target) => askRef.current(prompt, label, target) }), []);
+  const generateRef = useRef(generate);
+  generateRef.current = generate;
+  useImperativeHandle(apiRef, () => ({ ask: (prompt, label, target) => askRef.current(prompt, label, target), generate: (label, target) => generateRef.current(label, target) }), []);
 
   const quick: { label: string; prompt: string }[] = [];
   if (focus) {
@@ -343,7 +391,7 @@ function AssistantMessage({
   onInsert: Props["onInsert"];
   onApply: Props["onApply"];
 }) {
-  const patch = streaming || !msg.target ? null : targetPatch(msg.content);
+  const patch = streaming || !msg.target ? null : (msg.structured ?? targetPatch(msg.content));
   const [applied, setApplied] = useState(false);
   const insertable = streaming || msg.target ? null : extractInsertable(msg.content);
   const [field, setField] = useState(0);
@@ -353,6 +401,7 @@ function AssistantMessage({
   return (
     <div className="space-y-2">
       {msg.content ? <Markdown text={msg.content} sources={msg.sources} /> : streaming && <p className="animate-pulse text-xs text-muted">Lecture du prosit et des liens, recherche…</p>}
+      {msg.warning && <p className="rounded-sm border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs">{msg.warning}</p>}
       {msg.error && <p className="rounded-sm border border-danger/40 bg-danger/10 px-3 py-2 text-xs">{msg.error}</p>}
       {msg.sources && msg.sources.length > 0 && !streaming && (
         <details className="text-xs text-muted">
@@ -373,7 +422,7 @@ function AssistantMessage({
           <button
             className="btn btn-ghost px-2 py-1 text-xs"
             onClick={() => {
-              navigator.clipboard.writeText(insertable ?? patch?.detail ?? patch?.text ?? msg.content).then(() => {
+              navigator.clipboard.writeText(insertable ?? (msg.structured ? msg.content : (patch?.detail ?? patch?.text ?? msg.content))).then(() => {
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
               });

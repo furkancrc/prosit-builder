@@ -42,3 +42,4 @@ export const IconExpand = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><pa
 export const IconSparkle = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" /></svg>);
 export const IconSend = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M5 12h14M13 6l6 6-6 6" /></svg>);
 export const IconStop = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><rect x="6" y="6" width="12" height="12" rx="1" /></svg>);
+export const IconWand = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M4 20L15 9M13 7l2-2 4 4-2 2M17 3v2M21 7h-2M8 3l.5 1.5L10 5l-1.5.5L8 7l-.5-1.5L6 5l1.5-.5z" /></svg>);

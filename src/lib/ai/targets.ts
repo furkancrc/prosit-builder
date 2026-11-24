@@ -1,5 +1,6 @@
 import type { DocType } from "../schema";
 import { extractFence, stripCitations } from "./insert";
+import type { GenKind, StructuredPatch } from "./structured";
 
 /** Blocs de réponse appliqués directement à un élément ou à un champ ciblé. */
 export const TEXT_FENCE = "prosit-texte";
@@ -9,7 +10,7 @@ export type AssistAction = "fix" | "improve" | "write";
 
 /** Ce que vise un bouton assistant : un élément de liste, ou un champ texte (Contexte, Problématique…). */
 export type AssistTarget =
-  | { kind: "item"; tab: DocType; section: string; fieldKey: string; fieldLabel: string; itemId: string; text: string; detail?: string; detailLabel?: string }
+  | { kind: "item"; tab: DocType; section: string; fieldKey: string; fieldLabel: string; itemId: string; text: string; detail?: string; detailLabel?: string; gen?: GenKind; existing?: StructuredPatch }
   | { kind: "field"; tab: DocType; section: string; fieldKey: string; fieldLabel: string; text: string };
 
 export const ACTION_LABELS: Record<AssistAction, string> = {
