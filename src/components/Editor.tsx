@@ -722,7 +722,8 @@ ${add}` : add;
         {/* Aperçu */}
         <div className={`${mobileView === "form" ? "hidden lg:block" : ""}`}>
           <div ref={previewRef} className="lg:sticky lg:top-[11.5rem] lg:max-h-[calc(100dvh-12.5rem)] lg:overflow-auto xl:top-[10.5rem] xl:max-h-[calc(100dvh-11.5rem)]">
-            <div className="mb-2 flex items-center gap-2 text-xs text-muted">
+            {/* en-tête collé en haut de la zone d'aperçu : le bouton Plein écran reste visible au défilement */}
+            <div className="z-10 mb-2 flex items-center lg:sticky lg:top-0 gap-2 bg-[var(--bg)] py-1 text-xs text-muted">
               <p className="min-w-0 flex-1 truncate">
                 Aperçu · <code>{filename}.docx</code>
               </p>
