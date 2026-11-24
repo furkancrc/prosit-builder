@@ -24,12 +24,14 @@ import { HelpDialog, SECTION_KEYS } from "./HelpDialog";
 import { ListEditor } from "./ListEditor";
 import { MetaForm } from "./MetaForm";
 import { Preview } from "./Preview";
+import { FullscreenPreview } from "./FullscreenPreview";
 import { useHistory } from "./useHistory";
 import { SaveIndicator, useSaver } from "./useSaver";
 import {
   IconBack,
   IconChevron,
   IconDownload,
+  IconExpand,
   IconHelp,
   IconLink,
   IconNext,
@@ -82,6 +84,8 @@ export function Editor({ prosit: initialProsit, documents, settings: initialSett
   const [mobileView, setMobileView] = useState<"form" | "preview">("form");
   const [metaOpen, setMetaOpen] = useState(true);
   const [download, setDownload] = useState<"docx" | "pdf" | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const closeFullscreen = useCallback(() => setFullscreen(false), []);
   const [helpOpen, setHelpOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -718,13 +722,31 @@ ${add}` : add;
         {/* Aperçu */}
         <div className={`${mobileView === "form" ? "hidden lg:block" : ""}`}>
           <div ref={previewRef} className="lg:sticky lg:top-[11.5rem] lg:max-h-[calc(100dvh-12.5rem)] lg:overflow-auto xl:top-[10.5rem] xl:max-h-[calc(100dvh-11.5rem)]">
-            <p className="mb-2 text-xs text-muted">
-              Aperçu · <code>{filename}.docx</code>
-            </p>
+            <div className="mb-2 flex items-center gap-2 text-xs text-muted">
+              <p className="min-w-0 flex-1 truncate">
+                Aperçu · <code>{filename}.docx</code>
+              </p>
+              <button className="btn btn-ghost shrink-0 px-2 py-1 text-xs" onClick={() => setFullscreen(true)} title="Aperçu ou PDF en plein écran">
+                <IconExpand width={14} height={14} /> Plein écran
+              </button>
+            </div>
             <Preview meta={meta} type={tab} content={renderContent} settings={settings} />
           </div>
         </div>
       </div>
+
+      {fullscreen && (
+        <FullscreenPreview
+          meta={meta}
+          type={tab}
+          content={renderContent}
+          settings={settings}
+          documentId={doc.id}
+          filename={filename}
+          beforePdf={flush}
+          onClose={closeFullscreen}
+        />
+      )}
 
       <AssistantPanel
         open={assistantOpen}
