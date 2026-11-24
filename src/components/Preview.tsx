@@ -147,14 +147,22 @@ export function Preview({ meta, type, content, settings }: { meta: Meta; type: D
                         <span className={more ? "font-bold" : ""}>
                           <Inline text={it.text} />
                         </span>
-                        {it.description && (
-                          <p className="mt-[2pt]">
-                            <Inline text={it.description} />
-                          </p>
-                        )}
+                        {it.description
+                          ?.split(/\r?\n/)
+                          .filter((l) => l.trim())
+                          .map((l, j) => (
+                            <p key={`d${j}`} className="mt-[2pt]">
+                              <Inline text={l} />
+                            </p>
+                          ))}
                         {!!it.points?.length && (
                           <ul className="mt-[2pt]">
-                            {it.points.map((p, j) => (
+                            {it.points.map((p, j) =>
+                              p.label && !p.texte.trim() ? (
+                                <li key={j} className="mt-[3pt] font-bold">
+                                  {p.label} :
+                                </li>
+                              ) : (
                               <li key={j} className="flex">
                                 <span className="w-[14pt] shrink-0" style={{ color: pink }}>
                                   {plain ? "o" : "■"}
@@ -164,7 +172,8 @@ export function Preview({ meta, type, content, settings }: { meta: Meta; type: D
                                   <Inline text={p.texte} />
                                 </span>
                               </li>
-                            ))}
+                              ),
+                            )}
                           </ul>
                         )}
                         {!!it.etapes?.length && (
@@ -176,13 +185,13 @@ export function Preview({ meta, type, content, settings }: { meta: Meta; type: D
                             ))}
                           </ol>
                         )}
+                        {it.detail && <p className="mt-[2pt] whitespace-pre-wrap">{it.detail}</p>}
+                        {it.blocks && <BlocksView blocks={it.blocks} />}
                         {it.interet && (
                           <p className="mt-[2pt] ml-[18pt]">
                             <strong>Intérêt :</strong> <Inline text={it.interet} />
                           </p>
                         )}
-                        {it.detail && <p className="mt-[2pt] whitespace-pre-wrap">{it.detail}</p>}
-                        {it.blocks && <BlocksView blocks={it.blocks} />}
                       </Item>
                     );
                   })}

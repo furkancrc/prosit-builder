@@ -155,3 +155,19 @@ describe("import intelligent (fusion, jamais de remplacement)", () => {
     expect(importFromXml(neutre, "retour").type).toBe("retour"); // aucun indice dans le fichier → onglet
   });
 });
+
+describe("fusion : hypothèses reformulées au retour", () => {
+  it("n'ajoute pas les formulations de l'aller quand toutes les hypothèses ont un statut", () => {
+    const a: Content = { pistes: [li("La mise en place des l'accès aux dossier partagé se fait via des GPO"), li("Il faut deux serveurs")] };
+    const r: Content = {
+      pistes: [
+        li("L'accès aux dossiers partagés sur le réseau se met en place via des GPO", { status: "valid", detail: "Les GPO montent les lecteurs." }),
+        li("Il faut deux serveurs pour répartir les tâches", { status: "partial", detail: "Pas obligatoire." }),
+      ],
+    };
+    expect(texts(effectiveRetourContent(a, r), "pistes")).toEqual([
+      "L'accès aux dossiers partagés sur le réseau se met en place via des GPO",
+      "Il faut deux serveurs pour répartir les tâches",
+    ]);
+  });
+});

@@ -242,6 +242,10 @@ export function mergeAllerIntoRetour(aller: Content, retour: Content): { content
         added++;
       }
     } else if (Array.isArray(a) && Array.isArray(r)) {
+      // hypothèses toutes tranchées dans le retour (au moins autant de statuts que de pistes dans l'aller) :
+      // c'est la version corrigée et reformulée, les formulations de l'aller n'y sont pas ajoutées
+      // (sinon chaque hypothèse reformulée apparaît deux fois)
+      if (f.key === "pistes" && r.filter((i) => i.status).length >= a.filter((i) => i.text.trim()).length) continue;
       // le retour prime : les éléments de l'aller ne font que combler ce qui manque
       const { items, added: n } = mergeLists(a, r, false);
       if (n) {

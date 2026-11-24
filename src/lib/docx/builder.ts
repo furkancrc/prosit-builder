@@ -292,24 +292,30 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
         children: runs(it.text, { bold: hasMore }),
       }),
     );
-    if (it.description) out.push(new Paragraph({ spacing: { after: 40 }, indent: { left: 720 }, children: runs(it.description) }));
+    // description : un paragraphe Word par ligne
+    for (const line of (it.description ?? "").split(/\r?\n/).filter((l) => l.trim()))
+      out.push(new Paragraph({ spacing: { after: 40 }, indent: { left: 720 }, children: runs(line) }));
     for (const p of it.points ?? [])
       out.push(
-        new Paragraph({
-          spacing: listSpacing,
-          numbering: { reference: "bullet", level: 1, instance },
-          children: p.label ? [...runs(p.label, { bold: true }), run(" : "), ...runs(p.texte)] : runs(p.texte),
-        }),
+        // libellé sans texte : sous-titre d'un groupe de points (« Règles de calcul des droits : »)
+        p.label && !p.texte.trim()
+          ? new Paragraph({ spacing: { before: 60, after: 20 }, indent: { left: 720 }, keepNext: true, children: [...runs(p.label, { bold: true }), run(" :")] })
+          : new Paragraph({
+              spacing: listSpacing,
+              numbering: { reference: "bullet", level: 1, instance },
+              children: p.label ? [...runs(p.label, { bold: true }), run(" : "), ...runs(p.texte)] : runs(p.texte),
+            }),
       );
     if (it.etapes?.length) {
       const inst = ++etapesInstance;
       for (const e of it.etapes) out.push(new Paragraph({ spacing: listSpacing, numbering: { reference: "etapes", level: 0, instance: inst }, children: runs(e) }));
     }
-    if (it.interet)
-      out.push(new Paragraph({ spacing: { before: 40, after: 40 }, indent: { left: 1080 }, children: [run("Intérêt :", { bold: true }), run(" "), ...runs(it.interet)] }));
     // reste éventuel d'un ancien texte libre (non mis en forme) : une ligne = un paragraphe
     for (const line of (it.detail ?? "").split(/\r?\n/).filter((l) => l.trim())) out.push(new Paragraph({ spacing: listSpacing, indent: { left: 720 }, children: runs(line) }));
+    // contenu riche (tableaux, images) avant l'intérêt, qui conclut l'élément
     out.push(...(it.blocks ?? []).flatMap((rb) => richBlock(rb, 720)));
+    if (it.interet)
+      out.push(new Paragraph({ spacing: { before: 40, after: 40 }, indent: { left: 1080 }, children: [run("Intérêt :", { bold: true }), run(" "), ...runs(it.interet)] }));
     return out;
   };
 

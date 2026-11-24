@@ -145,7 +145,13 @@ export function formatPlanList(items: ListItem[], kind: "etude" | "realisation")
     } else {
       el.text = cleanText(it.text);
     }
-    el.description = clean(el.description);
+    // description : un paragraphe par ligne (chaque ligne nettoyée, lignes vides retirées)
+    const desc = (el.description ?? "")
+      .split(/\r?\n/)
+      .map((l) => cleanText(l))
+      .filter(Boolean)
+      .join("\n");
+    el.description = desc || undefined;
     el.interet = clean(el.interet?.replace(INTERET, ""));
     el.points = cleanPoints(el.points);
     const etapes = (el.etapes ?? []).map((e) => cleanText(e.replace(NUMBER, "").replace(/\s*\n\s*/g, " "))).filter(Boolean);

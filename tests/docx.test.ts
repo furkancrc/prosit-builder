@@ -3,7 +3,7 @@ import JSZip from "jszip";
 import { buildDocx } from "@/lib/docx/builder";
 import { importDocx, importFromXml } from "@/lib/docx/import";
 import { buildDocModel } from "@/lib/doc-model";
-import { DEFAULT_SETTINGS, type Content, type Meta } from "@/lib/schema";
+import { DEFAULT_SETTINGS, type Content, type ListItem, type Meta } from "@/lib/schema";
 
 const meta: Meta = {
   nom: "Prosit aller Stats OS - 1",
@@ -187,9 +187,13 @@ describe("buildDocx (modèle Boucle PBL)", () => {
       expect(res.content[k], k).toBe(content[k]);
     }
     const strip = (v: unknown) => (v as { text: string; level: number }[]).map(({ text, level }) => ({ text, level }));
-    for (const k of ["motsInconnus", "contraintes", "livrables", "pistes", "etude", "realisation"]) {
+    for (const k of ["motsInconnus", "contraintes", "livrables", "pistes", "etude"]) {
       expect(strip(res.content[k]), k).toEqual(strip(content[k]));
     }
+    // plan d'action : les sous-éléments reviennent dans l'élément parent (étapes / points), comme après formatProsit
+    const real = res.content.realisation as ListItem[];
+    expect(real.map((i) => i.text)).toEqual(["Charger le CSV", "Tracer les graphiques"]);
+    expect([...(real[0].etapes ?? []), ...(real[0].points ?? []).map((p) => p.texte)]).toEqual(["Lister les colonnes", "Nettoyer"]);
   });
 });
 
@@ -284,7 +288,9 @@ describe("import de l'ancien format (styles Titre 1 / Titre 2)", () => {
     expect(r.content.generalisation).toBe("Représentation du SI");
     expect(t(r, "pistes")).toEqual([["Segmentation", 0]]);
     expect(t(r, "etude")).toEqual([["Comprendre un SI", 0]]);
-    expect(t(r, "realisation")).toEqual([["Inventaire", 0], ["Lister", 1]]);
+    expect(t(r, "realisation")).toEqual([["Inventaire", 0]]);
+    const inv = (r.content.realisation as ListItem[])[0];
+    expect([...(inv.etapes ?? []), ...(inv.points ?? []).map((p) => p.texte)]).toEqual(["Lister"]);
   });
 });
 
@@ -314,5 +320,52 @@ describe("buildDocModel", () => {
     expect(m.blocks.some((b) => b.kind === "empty")).toBe(true);
     expect(m.title).toBe("Boucle PBL : Stats OS : Clefs de Performance");
     expect(m.info).toContain("17/11/2026");
+  });
+});
+
+describe("import d'un retour détaillé (justifications et plan structuré en retrait)", () => {
+  // paragraphe de liste sans puce, en retrait de 720 (justification, description, intérêt)
+  const ind = (text: string) => `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:ind w:left="720"/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+  const xml = doc([
+    p("", "Prosit retour n° 3"),
+    p("", "Recherche des pistes de solution."),
+    p("ListParagraph", "✔ L'accès se met en place via des GPO", { id: 6, lvl: 0 }),
+    ind("Les GPO montent les lecteurs réseau."),
+    p("ListParagraph", "◐ Il faut deux serveurs", { id: 6, lvl: 0 }),
+    ind("Pas obligatoire : un seul serveur suffit."),
+    p("", "Plan d'action."),
+    p("", "Études :"),
+    p("ListParagraph", "Définir la méthode AGDLP", { id: 6, lvl: 0 }),
+    ind("Méthode recommandée par Microsoft."),
+    p("ListParagraph", "A (Accounts) : les comptes", { id: 6, lvl: 1 }),
+    ind("Règles de calcul :"),
+    p("ListParagraph", "Cumul : les droits s'additionnent", { id: 6, lvl: 1 }),
+    ind("Intérêt : un seul groupe à modifier."),
+    p("", "Réalisation :"),
+    p("ListParagraph", "Créer les dossiers partagés", { id: 6, lvl: 0 }),
+    p("ListParagraph", "Préparer le serveur", { id: 9, lvl: 0 }),
+    p("ListParagraph", "Créer l'arborescence", { id: 9, lvl: 0 }),
+  ]);
+  const formats = new Map([
+    ["6:0", "bullet"],
+    ["6:1", "bullet"],
+    ["9:0", "decimal"],
+  ]);
+
+  it("rattache la justification à l'hypothèse et reconstruit les éléments du plan", () => {
+    const r = importFromXml(xml, undefined, new Map(), new Map(), formats);
+    expect(r.type).toBe("retour");
+    expect((r.content.pistes as ListItem[]).map((i) => [i.status, i.text, i.detail])).toEqual([
+      ["valid", "L'accès se met en place via des GPO", "Les GPO montent les lecteurs réseau."],
+      ["partial", "Il faut deux serveurs", "Pas obligatoire : un seul serveur suffit."],
+    ]);
+    const [agdlp] = r.content.etude as ListItem[];
+    expect(agdlp).toMatchObject({
+      text: "Définir la méthode AGDLP",
+      description: "Méthode recommandée par Microsoft.",
+      points: [{ label: "A (Accounts)", texte: "Les comptes" }, { label: "Règles de calcul", texte: "" }, { label: "Cumul", texte: "Les droits s'additionnent" }],
+      interet: "un seul groupe à modifier.",
+    });
+    expect(r.content.realisation).toEqual([expect.objectContaining({ text: "Créer les dossiers partagés", etapes: ["Préparer le serveur", "Créer l'arborescence"] })]);
   });
 });

@@ -1,15 +1,19 @@
 import JSZip from "jszip";
-import type { Content, DocType, ListItem, MetaPatch, PisteStatus, RichBlock } from "../schema";
+import type { Content, DocType, ListItem, MetaPatch, PisteStatus, Point, RichBlock } from "../schema";
 import { MAX_LEVEL, STATUS_META, normalizeList } from "../schema";
 import { allFields, emptyContent, getTemplate, type FieldDef, type SectionDef } from "../templates";
-import { isTitleLine } from "../format";
+import { isTitleLine, parsePoint } from "../format";
 
 interface RawPara {
   kind: "p";
   style: string;
   text: string;
   numbered: boolean;
+  /** Numérotation Word (w:numId) du paragraphe, "" sans numérotation. */
+  numId: string;
   ilvl: number;
+  /** Retrait gauche du paragraphe (twips, 0 sans retrait). */
+  indent: number;
   /** Couleurs du texte, fonds (w:shd) et surlignages (HL:nom) du paragraphe. */
   colors: string[];
   /** Images (identifiants de relation r:embed) contenues dans le paragraphe. */
@@ -51,6 +55,8 @@ function parsePara(m: string): RawPara {
   const numPr = /<w:numPr>([\s\S]*?)<\/w:numPr>/.exec(m)?.[1];
   const numId = numPr ? /<w:numId w:val="(\d+)"/.exec(numPr)?.[1] : undefined;
   const ilvl = numPr ? Number(/<w:ilvl w:val="(\d+)"/.exec(numPr)?.[1] ?? 0) : 0;
+  const pPr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(m)?.[0] ?? "";
+  const indent = Number(/<w:ind [^>]*?w:(?:left|start)="(\d+)"/.exec(pPr)?.[1] ?? 0);
   let text = "";
   for (const t of m.match(/<w:t(?: [^>]*)?>[^<]*<\/w:t>|<w:tab\/>|<w:br\/>/g) ?? []) {
     if (t.startsWith("<w:tab")) text += " ";
@@ -63,7 +69,7 @@ function parsePara(m: string): RawPara {
   ];
   const images = [...m.matchAll(/<a:blip [^>]*?r:embed="([^"]+)"/g)].map((c) => c[1]);
   const caption = /<w:jc w:val="center"\/>/.test(m) && /<w:i\/>|<w:i w:val="(?:1|true)"\/>/.test(m);
-  return { kind: "p", style, text: text.replace(/ /g, " ").trim(), numbered: !!numId && numId !== "0", ilvl, colors, images, caption };
+  return { kind: "p", style, text: text.replace(/ /g, " ").trim(), numbered: !!numId && numId !== "0", numId: numId ?? "", ilvl, indent, colors, images, caption };
 }
 
 const PARA_RE = /<w:p[ >][\s\S]*?<\/w:p>|<w:p\/>/g;
@@ -136,7 +142,22 @@ let idSeq = 0;
 const newId = () => `imp${Date.now().toString(36)}${(idSeq++).toString(36)}`;
 
 type Target = { section: SectionDef; field?: FieldDef };
-type DraftItem = { text: string; rawLevel: number; detail?: string; status?: PisteStatus; blocks: RichBlock[] };
+type DraftItem = {
+  text: string;
+  rawLevel: number;
+  detail?: string;
+  status?: PisteStatus;
+  blocks: RichBlock[];
+  /** Plan d'action : numérotation du titre et parties structurées lues sous l'élément. */
+  numId?: string;
+  description?: string[];
+  points?: Point[];
+  etapes?: string[];
+  interet?: string;
+};
+
+/** Format Word (bullet, decimal…) d'un niveau de numérotation : clé « numId:ilvl ». */
+export type NumFormats = Map<string, string>;
 
 /**
  * Analyse le XML d'un prosit et pré-remplit les champs du template.
@@ -151,6 +172,7 @@ export function importFromXml(
   forceType?: DocType,
   images: Map<string, string> = new Map(),
   styleNames: Map<string, string> = new Map(),
+  numFormats: NumFormats = new Map(),
 ): ImportResult {
   const nodes = parseBody(documentXml);
   // styles à identifiant opaque (ex. « 139 ») → nom normalisé (« heading1 », « listparagraph »)
@@ -210,6 +232,37 @@ export function importFromXml(
   let current: Target | undefined;
 
   /** Dernier élément du champ courant, si ce champ accepte du contenu riche. */
+  /**
+   * Plan d'action (format de l'export : titre en puce, description en retrait, points en puces de niveau 2,
+   * étapes en numérotation décimale, « Intérêt : ») : reconstruit l'élément structuré.
+   * Renvoie false quand le paragraphe est un nouvel élément (traité ensuite comme les autres listes).
+   */
+  const planPara = (field: FieldDef, p: RawPara, bullet: RegExpExecArray | null, manual: RegExpExecArray | null): boolean => {
+    const l = lists.get(field.key);
+    const el = l?.[l.length - 1];
+    if (!el) return false;
+    const fmt = p.numbered ? numFormats.get(`${p.numId}:${p.ilvl}`) : undefined;
+    const decimal = fmt ? fmt !== "bullet" && fmt !== "none" : !!manual && !bullet;
+    // sous-élément numéroté : étape (numérotation décimale distincte du titre) ou point (puce de niveau 2)
+    if (p.numbered && (p.ilvl > 0 || (decimal && p.numId !== el.numId))) {
+      if (decimal) (el.etapes ??= []).push(p.text);
+      else (el.points ??= []).push(parsePoint(p.text));
+      return true;
+    }
+    if (p.numbered || bullet || manual) return false;
+    if (p.images.length || p.caption) return false;
+    // paragraphe sans puce sous l'élément : intérêt, sous-titre d'un groupe de points, ou description
+    const interet = /^\s*(?:intérêts?|avantages?)\b[^:]{0,40}:\s*(.+)$/i.exec(p.text);
+    const intro = /^(.{1,80}?)\s*:$/.exec(p.text.trim());
+    if (interet) el.interet = el.interet ? `${el.interet} ${interet[1]}` : interet[1];
+    // « Règles de calcul des droits : » → sous-titre des points qui suivent (reste à sa place dans la liste)
+    else if (intro && (el.points?.length || el.description?.length)) (el.points ??= []).push({ label: intro[1], texte: "" });
+    // après des points, un paragraphe reste dans la suite des points ; sinon c'est la description
+    else if (el.points?.length) (el.points ??= []).push(parsePoint(p.text));
+    else (el.description ??= []).push(p.text);
+    return true;
+  };
+
   const richTarget = (): DraftItem | undefined => {
     const f = current?.field;
     if (!f || f.kind !== "list" || !f.rich) return undefined;
@@ -282,18 +335,24 @@ export function importFromXml(
 
     const bullet = BULLET.exec(p.text);
     const manual = bullet ? null : (/^\s*\d+\s*[.)](?:\s+|(?=[^\d\s]))/.exec(p.text) ?? /^\s*[a-z]\s*[.)]\s+/i.exec(p.text));
-    const isItem = p.numbered || !!bullet || isListStyle(p.style) || !!manual;
+    if (field.plan && planPara(field, p, bullet, manual)) return;
+
     const prevItem = richTarget();
-    // Prosit retour : un paragraphe simple sous un élément est un paragraphe de cet élément
+    // « Paragraphe de liste » sans puce, en retrait, sous un élément : suite de cet élément (justification, définition)
+    const continuation = !!prevItem && isListStyle(p.style) && !p.numbered && !bullet && !manual && p.indent > 0;
+    const isItem = !continuation && (p.numbered || !!bullet || isListStyle(p.style) || !!manual);
+    // Prosit retour : un paragraphe simple sous un élément est un paragraphe de cet élément ;
+    // le paragraphe de liste en retrait devient la définition / justification (tant qu'il n'y a pas de contenu riche)
     if (!isItem && prevItem) {
-      prevItem.blocks.push({ id: newId(), type: "text", text: p.text });
+      if (continuation && field.detail && !prevItem.blocks.length) prevItem.detail = prevItem.detail ? `${prevItem.detail}\n${p.text}` : p.text;
+      else prevItem.blocks.push({ id: newId(), type: "text", text: p.text });
       return;
     }
 
     const prefix = bullet ?? (p.numbered ? null : manual);
     const text = prefix ? p.text.slice(prefix[0].length).trim() : p.text;
     if (!text) return;
-    const item: DraftItem = { text, rawLevel: p.numbered ? p.ilvl : 0, blocks: [] };
+    const item: DraftItem = { text, rawLevel: p.numbered ? p.ilvl : 0, blocks: [], numId: p.numId };
     if (field.status) {
       // statut : symbole en tête, couleur / surlignage du texte
       const sym = (Object.keys(STATUS_META) as PisteStatus[]).find((st) => item.text.startsWith(STATUS_META[st].symbol));
@@ -360,6 +419,10 @@ export function importFromXml(
         ...(r.detail ? { detail: r.detail } : {}),
         ...(r.status ? { status: r.status } : {}),
         ...(r.blocks.length ? { blocks: r.blocks } : {}),
+        ...(r.description?.length ? { description: r.description.join("\n") } : {}),
+        ...(r.points?.length ? { points: r.points } : {}),
+        ...(r.etapes?.length ? { etapes: r.etapes } : {}),
+        ...(r.interet ? { interet: r.interet } : {}),
       }));
       content[f.key] = normalizeList(items);
     }
@@ -396,5 +459,21 @@ export async function importDocx(buf: ArrayBuffer | Buffer, forceType?: DocType,
   const stylesXml = (await zip.file("word/styles.xml")?.async("string")) ?? "";
   const styleNames = new Map<string, string>();
   for (const m of stylesXml.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>[\s\S]*?<w:name w:val="([^"]+)"/g)) styleNames.set(m[1], m[2]);
-  return importFromXml(xml, forceType, images, styleNames);
+  return importFromXml(xml, forceType, images, styleNames, readNumFormats((await zip.file("word/numbering.xml")?.async("string")) ?? ""));
+}
+
+/** numbering.xml → format (bullet, decimal…) de chaque niveau de chaque numérotation (clé « numId:ilvl »). */
+export function readNumFormats(numberingXml: string): NumFormats {
+  const abstract = new Map<string, Map<string, string>>();
+  for (const a of numberingXml.match(/<w:abstractNum\b[\s\S]*?<\/w:abstractNum>/g) ?? []) {
+    const id = /w:abstractNumId="(\d+)"/.exec(a)?.[1];
+    if (!id) continue;
+    const lv = new Map<string, string>();
+    for (const m of a.matchAll(/<w:lvl w:ilvl="(\d+)"[\s\S]*?<w:numFmt w:val="(\w+)"/g)) lv.set(m[1], m[2]);
+    abstract.set(id, lv);
+  }
+  const out: NumFormats = new Map();
+  for (const m of numberingXml.matchAll(/<w:num w:numId="(\d+)"[^>]*>[\s\S]*?<w:abstractNumId w:val="(\d+)"/g))
+    for (const [ilvl, fmt] of abstract.get(m[2]) ?? []) out.set(`${m[1]}:${ilvl}`, fmt);
+  return out;
 }
