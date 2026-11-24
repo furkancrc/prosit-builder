@@ -30,6 +30,8 @@ export type FieldDef =
       rich?: boolean;
       /** Rendu en tableau à deux colonnes (élément | définition) dans le document, comme dans un CER. */
       asTable?: [string, string];
+      /** Éléments structurés du plan d'action (description, points, étapes, intérêt). */
+      plan?: boolean;
     })
   /** Champ court affiché « Libellé : valeur » en gras (section Rôles). */
   | (FieldBase & { kind: "role" });
@@ -100,8 +102,8 @@ export const ALLER_TEMPLATE: TemplateDef = {
       title: "Plan d’action",
       aliases: ["plan d'action", "plan daction"],
       fields: [
-        { key: "etude", label: "Études", kind: "list", heading: true, style: "bullet", aliases: ["etude"], placeholder: "Notion à étudier" },
-        { key: "realisation", label: "Réalisation", kind: "list", heading: true, style: "bullet-numbered", aliases: ["realisations"], placeholder: "Action à réaliser" },
+        { key: "etude", label: "Études", kind: "list", heading: true, style: "bullet", plan: true, aliases: ["etude"], placeholder: "Notion à étudier" },
+        { key: "realisation", label: "Réalisation", kind: "list", heading: true, style: "bullet-numbered", plan: true, aliases: ["realisations"], placeholder: "Action à réaliser" },
       ],
     },
   ],
@@ -113,8 +115,9 @@ const RETOUR_LIST_EXTRAS: Record<string, { detail: string; status?: boolean; ric
   contraintes: { detail: "Explication", rich: true },
   livrables: { detail: "Réalisé / commentaire", rich: true },
   pistes: { detail: "Justification", status: true, rich: true },
-  etude: { detail: "Ce qu’on a appris", rich: true },
-  realisation: { detail: "Résultat", rich: true },
+  // plan d'action : la description / les points / les étapes remplacent l'ancien champ libre
+  etude: { detail: "", rich: true },
+  realisation: { detail: "", rich: true },
 };
 
 /**
@@ -286,7 +289,9 @@ export function sameItem(a: string, b: string): boolean {
  * du retour est inséré juste après l'élément qui le précédait dans l'aller, pour garder l'ordre.
  */
 function mergeLists(incoming: ListItem[], base: ListItem[], enrich = true): { items: ListItem[]; added: number; enriched: number } {
-  const items = base.filter((i) => i.text.trim() || i.detail?.trim() || i.blocks?.length).map((i) => ({ ...i }));
+  const items = base
+    .filter((i) => i.text.trim() || i.detail?.trim() || i.blocks?.length || i.description?.trim() || i.points?.length || i.etapes?.length)
+    .map((i) => ({ ...i }));
   let added = 0;
   let enriched = 0;
   let cursor = -1; // position (dans items) du dernier élément entrant retrouvé ou inséré
@@ -311,6 +316,23 @@ function mergeLists(incoming: ListItem[], base: ListItem[], enrich = true): { it
       }
       if (a.blocks?.length && !r.blocks?.length) {
         r.blocks = a.blocks;
+        changed = true;
+      }
+      // élément structuré du plan d'action : chaque partie manquante est reprise
+      if (a.description?.trim() && !r.description?.trim()) {
+        r.description = a.description;
+        changed = true;
+      }
+      if (a.points?.length && !r.points?.length) {
+        r.points = a.points;
+        changed = true;
+      }
+      if (a.etapes?.length && !r.etapes?.length) {
+        r.etapes = a.etapes;
+        changed = true;
+      }
+      if (a.interet?.trim() && !r.interet?.trim()) {
+        r.interet = a.interet;
         changed = true;
       }
       if (moreComplete(a.text, r.text)) {

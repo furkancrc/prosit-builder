@@ -25,6 +25,10 @@ export const RichBlockSchema = z.discriminatedUnion("type", [
 ]);
 export type RichBlock = z.infer<typeof RichBlockSchema>;
 
+/** Sous-puce d'un élément du plan d'action : « label : texte » (label court, en gras). */
+export const PointSchema = z.object({ label: z.string().max(200).optional(), texte: z.string().max(2000) });
+export type Point = z.infer<typeof PointSchema>;
+
 export const ListItemSchema = z.object({
   id: z.string().min(1).max(64),
   text: z.string().max(5000),
@@ -35,6 +39,15 @@ export const ListItemSchema = z.object({
   status: PisteStatusSchema.optional(),
   /** Prosit retour : contenu riche (paragraphes, images, tableaux) sous l'élément. */
   blocks: z.array(RichBlockSchema).max(40).optional(),
+  // ---- Élément structuré du plan d'action (le titre est `text`) ----
+  /** Une phrase de présentation, sans puce. */
+  description: z.string().max(5000).optional(),
+  /** Sous-puces, avec un libellé court en gras facultatif. */
+  points: z.array(PointSchema).max(60).optional(),
+  /** Liste numérotée (réalisation). */
+  etapes: z.array(z.string().max(2000)).max(60).optional(),
+  /** Phrase de conclusion, rendue « Intérêt : … ». */
+  interet: z.string().max(2000).optional(),
 });
 export type ListItem = z.infer<typeof ListItemSchema>;
 
