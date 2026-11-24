@@ -45,6 +45,35 @@ Web app pour rédiger les **prosits aller / retour** du CESI et les exporter en 
 
 Stack : Next.js 15 (App Router) · TypeScript · Tailwind 4 · `docx` · LibreOffice headless · SQLite (`better-sqlite3`) · zod · Vitest.
 
+## Mise en forme automatique
+
+Le contenu généré par Perplexity (ou collé depuis ailleurs) est remis en forme par un **formateur déterministe** : `formatProsit` (`src/lib/format/`). C'est une fonction pure, sans réseau ni IA. La même entrée donne toujours la même sortie, et l'appliquer deux fois ne change plus rien. Il est appliqué :
+
+- après chaque génération ou insertion de l'assistant, sur la rubrique concernée ;
+- juste avant chaque export Word / PDF, ainsi que dans l'aperçu et la présentation (le document enregistré n'est pas modifié) ;
+- à la demande, avec le bouton **« Mettre en forme »** de l'éditeur, annulable par Ctrl+Z.
+
+Ce qu'il fait :
+
+- **Texte** : retire le Markdown (`**`, `#`, backticks), les références `[1]` et les espaces en trop, et corrige les majuscules accentuées (« Etudier » → « Étudier »).
+- **Plan d'action** : chaque élément devient un objet structuré (titre, description, points « libellé : texte », étapes numérotées, intérêt). L'ancien texte libre est découpé automatiquement : « - » donne un point, « 1. » une étape, « Avantage : » ou « → » l'intérêt. Les éléments vides qui doublonnent un élément rempli sont supprimés.
+- **Hypothèses** : les symboles ✔ ◐ ✘ deviennent le statut, « hypothèse → justification » est séparé. Les doublons (similarité ≥ 0,8, accents et typos compris) sont fusionnés en gardant le statut et la justification la plus complète.
+- **Restes d'import** : les paragraphes qui ne sont qu'un titre de rubrique (« Analyser le besoin. ») sont retirés.
+- « terme : définition » n'est séparé que si le terme fait **6 mots au plus**. Une phrase longue qui contient « : » reste entière.
+
+**Génération structurée** : le bouton « Rédiger » d'un élément (définition, justification d'hypothèse, élément du plan) appelle `/api/assistant/generate`.
+
+- La route interroge Perplexity (`chat/completions`) avec `response_format: json_schema`, et la réponse est validée par zod (`src/lib/ai/structured.ts`).
+- Si la réponse n'est pas un JSON conforme, le parseur déterministe prend le relais et un avertissement s'affiche. Aucun second appel à l'IA n'est fait.
+
+**Export Word** :
+
+- Aucun saut de ligne ni `<w:br/>` dans le texte.
+- Le gras est réservé aux titres et aux libellés.
+- Hypothèse : puce surlignée en gras, puis la justification en paragraphe retrait 720.
+- Élément du plan : titre en puce, description retrait 720, points en vraies puces de niveau 1 avec libellé en gras, étapes en vraie numérotation décimale qui repart à 1 pour chaque élément, puis « **Intérêt :** ».
+- Le PDF est produit à partir du même document.
+
 ## Développement local
 
 ```bash
@@ -132,6 +161,8 @@ src/app/api/…            prosits, documents (+ export docx/pdf), import, setti
 src/components/          Editor, ListEditor, Preview, MetaForm, DownloadDialog, SettingsForm…
 src/lib/templates.ts     rubriques des prosits aller / retour (source unique pour formulaire, aperçu, docx, import)
 src/lib/doc-model.ts     modèle intermédiaire partagé par l'aperçu et l'export
+src/lib/format/          formateur déterministe formatProsit (texte, plan d'action, hypothèses)
+src/lib/ai/              assistant Perplexity (discussion, génération structurée JSON)
 src/lib/docx/            génération .docx (builder.ts) et import (import.ts)
 src/lib/pdf.ts           conversion LibreOffice headless
 src/lib/db.ts            SQLite (prosits, documents, réglages)
