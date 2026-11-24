@@ -90,6 +90,10 @@ export function formatProsit(content: Content, type: DocType): Content {
       let items = v;
       if (f.plan) items = formatPlanList(items, f.key === "realisation" ? "realisation" : "etude");
       else if (f.status) items = formatHypotheses(formatPlainList(items, false));
+      // pistes de l'aller (pas de statut ni de justification) : symboles retirés et doublons fusionnés,
+      // « hypothèse → précision » reste sur une seule ligne
+      else if (f.key === "pistes")
+        items = formatHypotheses(formatPlainList(items, false)).map(({ status: _s, detail, ...it }) => (detail ? { ...it, text: `${it.text} → ${detail}` } : it));
       else items = formatPlainList(items, !!f.detail);
       out[f.key] = items;
     }

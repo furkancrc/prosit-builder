@@ -356,14 +356,15 @@ function PlanFields({ item, onPatch }: { item: ListItem; onPatch: (patch: Partia
         {points.map((pt, i) => (
           <div key={i} className="flex items-start gap-1">
             <span className="mt-1.5 w-4 shrink-0 text-center text-muted">•</span>
-            <input
-              className="field w-32 shrink-0 py-1.5 text-[0.85rem] font-semibold"
-              value={pt.label ?? ""}
-              placeholder="Libellé"
-              aria-label={`Libellé du point ${i + 1}`}
-              onChange={(e) => setPoint(i, { label: e.target.value })}
-            />
-            <div className="min-w-0 flex-1">
+            {/* libellé au-dessus du texte sur mobile, à côté à partir de sm */}
+            <div className="grid min-w-0 flex-1 grid-cols-1 gap-1 sm:grid-cols-[8rem_minmax(0,1fr)]">
+              <input
+                className="field py-1.5 text-[0.85rem] font-semibold"
+                value={pt.label ?? ""}
+                placeholder="Libellé"
+                aria-label={`Libellé du point ${i + 1}`}
+                onChange={(e) => setPoint(i, { label: e.target.value })}
+              />
               <AutoTextarea value={pt.texte} placeholder="Texte du point…" aria-label={`Texte du point ${i + 1}`} onChange={(texte) => setPoint(i, { texte })} />
             </div>
             <IconBtn label="Retirer ce point" onClick={() => onPatch({ points: points.filter((_, j) => j !== i) })} className="hover:text-danger">

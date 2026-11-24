@@ -142,3 +142,21 @@ describe("formatProsit", () => {
     expect(formatProsit(retour, "retour")).toEqual(f);
   });
 });
+
+describe("formatProsit : pistes de l'aller et accents des verbes", () => {
+  it("fusionne les pistes en double sans ajouter de statut, accentue « Definir »", () => {
+    const out = formatProsit(
+      {
+        pistes: [
+          { id: "p1", text: "✔ L'arbre des dossiers correspond à l'AD → bonne pratique", level: 0 },
+          { id: "p2", text: "L’arbre des dossiers correspond à l’AD", level: 0 },
+        ],
+        etude: [{ id: "e1", text: "definir la méthode AGDLP", level: 0 }],
+      },
+      "aller",
+    );
+    expect(out.pistes).toEqual([{ id: "p1", text: "L'arbre des dossiers correspond à l'AD → Bonne pratique", level: 0 }]);
+    expect((out.etude as { text: string }[])[0].text).toBe("Définir la méthode AGDLP");
+    expect(formatProsit(out, "aller")).toEqual(out);
+  });
+});
