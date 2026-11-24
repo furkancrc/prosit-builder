@@ -9,6 +9,7 @@ import { buildFilename } from "@/lib/filename";
 import { effectiveMeta, prositTitle } from "@/lib/meta";
 import { channelName, type PresentationMessage } from "@/lib/presentation";
 import type { Content, DocType, ListItem, Meta, MetaPatch, Settings } from "@/lib/schema";
+import { formatProsit, countChanges } from "@/lib/format";
 import { coerceContent, emptyContent, getTemplate, isContentEmpty, mergeAllerIntoRetour, mergeImported, retourToAller, sectionNumbers, type FieldDef, type ImportMergeStats } from "@/lib/templates";
 import { DOC_STYLES, toRoman, type DocStyle } from "@/lib/doc-model";
 import { textForTextField, textToListItems } from "@/lib/ai/insert";
@@ -102,7 +103,8 @@ export function Editor({ prosit: initialProsit, documents, settings: initialSett
     () => (tab === "retour" ? mergeAllerIntoRetour(docs.aller.content, doc.content) : { content: doc.content, added: 0 }),
     [tab, docs.aller.content, doc.content],
   );
-  const renderContent = merged.content;
+  // aperçu = exactement ce qui sera exporté : contenu fusionné puis mis en forme (fonction pure)
+  const renderContent = useMemo(() => formatProsit(merged.content, tab), [merged.content, tab]);
   const template = getTemplate(tab);
   const sectionNums = sectionNumbers(template);
   const meta = useMemo(() => effectiveMeta(base, tab, tab === "retour" ? doc.overrides : null), [base, tab, doc.overrides]);

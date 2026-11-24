@@ -136,22 +136,83 @@ export function Preview({ meta, type, content, settings }: { meta: Meta; type: D
             if (b.asTable)
               return <KeywordTable key={k} items={b.items} headers={b.asTable} accent={classic ? BLUE : rapport ? ORANGE : accent} accentFg={plain ? "#ffffff" : readableOn(accent)} />;
             const nums = numberItems(b.items);
+            if (b.plan)
+              // élément structuré du plan d'action : même rendu que le Word (titre, description, points, étapes, intérêt)
+              return (
+                <ul key={k}>
+                  {b.items.map((it, i) => {
+                    const more = !!(it.description || it.points?.length || it.etapes?.length || it.interet || it.detail || it.blocks?.length);
+                    return (
+                      <Item key={it.id} marker={mk(listMarker(b.style, 0, nums[i]), 0)} pink={pink} level={0} classic={plain}>
+                        <span className={more ? "font-bold" : ""}>
+                          <Inline text={it.text} />
+                        </span>
+                        {it.description && (
+                          <p className="mt-[2pt]">
+                            <Inline text={it.description} />
+                          </p>
+                        )}
+                        {!!it.points?.length && (
+                          <ul className="mt-[2pt]">
+                            {it.points.map((p, j) => (
+                              <li key={j} className="flex">
+                                <span className="w-[14pt] shrink-0" style={{ color: pink }}>
+                                  {plain ? "o" : "■"}
+                                </span>
+                                <span>
+                                  {p.label && <strong>{p.label} : </strong>}
+                                  <Inline text={p.texte} />
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {!!it.etapes?.length && (
+                          <ol className="mt-[2pt] ml-[18pt] list-decimal">
+                            {it.etapes.map((e, j) => (
+                              <li key={j}>
+                                <Inline text={e} />
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                        {it.interet && (
+                          <p className="mt-[2pt] ml-[18pt]">
+                            <strong>Intérêt :</strong> <Inline text={it.interet} />
+                          </p>
+                        )}
+                        {it.detail && <p className="mt-[2pt] whitespace-pre-wrap">{it.detail}</p>}
+                        {it.blocks && <BlocksView blocks={it.blocks} />}
+                      </Item>
+                    );
+                  })}
+                </ul>
+              );
             return (
               <ul key={k}>
                 {b.items.map((it, i) => {
                   const st = it.status ? STATUS_META[it.status] : undefined;
+                  const lines = (it.detail ?? "").split(/\r?\n/).filter((l) => l.trim());
+                  // « terme : définition » en ligne seulement pour un terme court ; justification d'hypothèse en dessous
+                  const inline = !st && lines.length > 0 && it.text.trim().split(/\s+/).length <= 6;
+                  const below = inline ? lines.slice(1) : lines;
                   return (
                     <Item key={it.id} marker={mk(listMarker(b.style, it.level, nums[i]), it.level)} pink={pink} level={it.level} classic={plain}>
-                      <span style={st ? { background: st.highlight } : undefined} className={it.detail || it.blocks || st ? "font-bold" : ""}>
+                      <span style={st ? { background: st.highlight } : undefined} className={st || inline || (it.blocks && !lines.length) ? "font-bold" : ""}>
                         {st && `${st.symbol} `}
                         <Inline text={it.text} />
                       </span>
-                      {it.detail && (
-                        <span className="whitespace-pre-wrap">
+                      {inline && (
+                        <span>
                           {" : "}
-                          <Inline text={it.detail} />
+                          <Inline text={lines[0]} />
                         </span>
                       )}
+                      {below.map((l, j) => (
+                        <p key={j} className="mt-[2pt]">
+                          <Inline text={l} />
+                        </p>
+                      ))}
                       {it.blocks && <BlocksView blocks={it.blocks} />}
                     </Item>
                   );

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getDocuments, getProsit, getSettings } from "@/lib/db";
 import { effectiveMeta } from "@/lib/meta";
 import { effectiveRetourContent } from "@/lib/templates";
+import { formatProsit } from "@/lib/format";
 import { Presentation } from "@/components/Presentation";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export default async function PresentationPage({
   if (!prosit || !doc) notFound();
   const aller = docs.find((d) => d.type === "aller");
   // le retour est présenté fusionné avec l'aller, comme à l'export
-  const content = tab === "retour" && aller ? effectiveRetourContent(aller.content, doc.content) : doc.content;
+  const content = formatProsit(tab === "retour" && aller ? effectiveRetourContent(formatProsit(aller.content, "aller"), doc.content) : doc.content, tab);
   const settings = getSettings();
   return (
     <Presentation

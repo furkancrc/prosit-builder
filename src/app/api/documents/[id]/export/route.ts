@@ -1,6 +1,7 @@
 import { handle, jsonError } from "@/lib/api";
 import { getDocument, getDocuments, getProsit, getSettings } from "@/lib/db";
 import { effectiveRetourContent } from "@/lib/templates";
+import { formatProsit } from "@/lib/format";
 import { buildDocx } from "@/lib/docx/builder";
 import { loadAssets } from "@/lib/assets";
 import { collectAssetIds } from "@/lib/doc-model";
@@ -28,7 +29,8 @@ export function GET(req: Request, { params }: Ctx) {
     const meta = effectiveMeta(prosit, doc.type, doc.metaOverrides);
     // le retour est exporté fusionné avec l'aller (tout ce que l'aller contient et que le retour n'a pas)
     const aller = doc.type === "retour" ? getDocuments(doc.prositId).find((d) => d.type === "aller") : undefined;
-    const content = aller ? effectiveRetourContent(aller.content, doc.content) : doc.content;
+    // mise en forme déterministe juste avant l'export (même modèle pour le Word et le PDF)
+    const content = formatProsit(aller ? effectiveRetourContent(formatProsit(aller.content, "aller"), doc.content) : doc.content, doc.type);
     const assets = loadAssets(collectAssetIds(content));
     const docx = await buildDocx({ meta, type: doc.type, content, settings, assets });
 

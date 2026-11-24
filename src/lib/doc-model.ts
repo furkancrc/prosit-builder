@@ -19,7 +19,7 @@ export type Block =
   | { kind: "h2"; text: string; num: number; nav?: number }
   | { kind: "subheading"; text: string }
   | { kind: "para"; text: string }
-  | { kind: "list"; style: ListStyle; items: ListItem[]; instance: number; withStatus?: boolean; asTable?: [string, string] }
+  | { kind: "list"; style: ListStyle; items: ListItem[]; instance: number; withStatus?: boolean; asTable?: [string, string]; plan?: boolean }
   /** Légende des couleurs de statut (pistes de solution du retour). */
   | { kind: "legend" }
   | { kind: "roles"; items: { label: string; value: string }[] }
@@ -143,7 +143,7 @@ export function buildDocModel(meta: Meta, type: DocType, rawContent: Content, st
             status: f.status ? i.status : undefined,
             blocks: f.rich ? cleanBlocks(i.blocks) : undefined,
           }));
-          blocks.push({ kind: "list", style: f.style, items: clean, instance: ++listInstance, withStatus: !!f.status, asTable: f.asTable });
+          blocks.push({ kind: "list", style: f.style, items: clean, instance: ++listInstance, withStatus: !!f.status, asTable: f.asTable, plan: f.plan });
         }
       }
   }

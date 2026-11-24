@@ -93,7 +93,8 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
   const listSpacing = plain ? { after: 0, line: 259 } : { after: 60 };
 
   const run = (text: string, o: { bold?: boolean; size?: number; color?: string; italics?: boolean } = {}) =>
-    new TextRun({ text, font, bold: o.bold ?? false, italics: o.italics, size: o.size ?? SZ_BODY, color: o.color ?? "000000" });
+    // jamais de retour à la ligne dans un run : une ligne = un paragraphe
+    new TextRun({ text: text.replace(/\s*\n\s*/g, " "), font, bold: o.bold ?? false, italics: o.italics, size: o.size ?? SZ_BODY, color: o.color ?? "000000" });
 
   /** Texte avec **gras** en ligne. */
   const runs = (text: string, o: { bold?: boolean; size?: number } = {}) =>
@@ -250,10 +251,66 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
     },
   });
   const [b0, b1, b2] = classic ? ["-", "o", "▪"] : rapport ? ["•", "o", "▪"] : ["■", "■", "■"];
-  const numbering: Record<ListStyle, ILevelsOptions[]> = {
+  const numbering: Record<ListStyle | "etapes", ILevelsOptions[]> = {
     bullet: [lvl(0, LevelFormat.BULLET, b0), lvl(1, LevelFormat.BULLET, b1), lvl(2, LevelFormat.BULLET, b2)],
     numbered: [lvl(0, LevelFormat.DECIMAL, "%1."), lvl(1, LevelFormat.LOWER_LETTER, "%2."), lvl(2, LevelFormat.LOWER_ROMAN, "%3.")],
     "bullet-numbered": [lvl(0, LevelFormat.BULLET, b0), lvl(1, LevelFormat.DECIMAL, "%2."), lvl(2, LevelFormat.LOWER_LETTER, "%3.")],
+    // étapes d'un élément du plan d'action : vraie liste numérotée 1. 2. 3., retrait 1440
+    etapes: [
+      {
+        level: 0,
+        format: LevelFormat.DECIMAL,
+        text: "%1.",
+        alignment: AlignmentType.LEFT,
+        suffix: LevelSuffix.TAB,
+        style: { run: { color: "000000", size: SZ_BODY, font }, paragraph: { indent: { left: 1440, hanging: 360 } } },
+      },
+    ],
+  };
+
+  /** Libellé court (≤ 6 mots) : seul cas où le texte avant « : » est mis en gras. */
+  const isLabel = (text: string) => text.trim().split(/\s+/).filter(Boolean).length <= 6;
+
+  // chaque liste d'étapes repart à 1 : une nouvelle instance de numérotation par élément
+  let etapesInstance = 0;
+
+  /**
+   * Élément structuré du plan d'action : titre (puce de niveau 0, gras), description (retrait 720),
+   * points (vraies puces de niveau 1, libellé en gras), étapes (liste décimale qui repart à 1),
+   * intérêt (retrait 1080, « Intérêt : » en gras), puis images / tableaux éventuels.
+   */
+  const planElement = (it: ListItem, style: ListStyle, instance: number, first: boolean): (Paragraph | Table)[] => {
+    const out: (Paragraph | Table)[] = [];
+    const hasMore = !!(it.description || it.points?.length || it.etapes?.length || it.interet || it.detail || it.blocks?.length);
+    out.push(
+      new Paragraph({
+        keepNext: hasMore,
+        keepLines: true,
+        spacing: { before: first ? 60 : 120, after: hasMore ? 40 : 0 },
+        // niveau conservé pour un contenu non formaté (sous-éléments) ; après formatProsit, tout est au niveau 0
+        numbering: { reference: style, level: it.level, instance },
+        children: runs(it.text, { bold: hasMore }),
+      }),
+    );
+    if (it.description) out.push(new Paragraph({ spacing: { after: 40 }, indent: { left: 720 }, children: runs(it.description) }));
+    for (const p of it.points ?? [])
+      out.push(
+        new Paragraph({
+          spacing: listSpacing,
+          numbering: { reference: "bullet", level: 1, instance },
+          children: p.label ? [...runs(p.label, { bold: true }), run(" : "), ...runs(p.texte)] : runs(p.texte),
+        }),
+      );
+    if (it.etapes?.length) {
+      const inst = ++etapesInstance;
+      for (const e of it.etapes) out.push(new Paragraph({ spacing: listSpacing, numbering: { reference: "etapes", level: 0, instance: inst }, children: runs(e) }));
+    }
+    if (it.interet)
+      out.push(new Paragraph({ spacing: { before: 40, after: 40 }, indent: { left: 1080 }, children: [run("Intérêt :", { bold: true }), run(" "), ...runs(it.interet)] }));
+    // reste éventuel d'un ancien texte libre (non mis en forme) : une ligne = un paragraphe
+    for (const line of (it.detail ?? "").split(/\r?\n/).filter((l) => l.trim())) out.push(new Paragraph({ spacing: listSpacing, indent: { left: 720 }, children: runs(line) }));
+    out.push(...(it.blocks ?? []).flatMap((rb) => richBlock(rb, 720)));
+    return out;
   };
 
   // ---------- blocs ----------
@@ -367,26 +424,33 @@ export function buildDocument({ meta, type, content, settings, assets }: BuildOp
         ];
       case "list":
         if (b.asTable) return keywordTable(b.items, b.asTable);
+        if (b.plan) return b.items.flatMap((it, i) => planElement(it, b.style, b.instance, i === 0));
         return b.items.flatMap((it) => {
           const st = it.status;
-          const children: TextRun[] = [];
-          // élément en gras quand il est suivi d'une définition / explication (prosit retour),
-          // surligné en vert / orange / rouge selon son statut
-          if (st) children.push(hl(`${STATUS_META[st].symbol} ${stripBold(it.text)}`, st, { bold: true }));
-          else children.push(...runs(it.text, { bold: !!it.detail || !!it.blocks }));
-          if (it.detail) {
-            it.detail.split(/\r?\n/).forEach((line, i) => {
-              if (i === 0) children.push(run(" : "), ...runs(line));
-              else children.push(new TextRun({ text: "", break: 1 }), ...runs(line));
-            });
-          }
           const indent = LIST_LEFT + it.level * LIST_STEP;
+          const detailLines = (it.detail ?? "").split(/\r?\n/).filter((l) => l.trim());
+          const children: TextRun[] = [];
+          let rest = detailLines;
+          if (st) {
+            // hypothèse : symbole + texte en gras surligné selon le statut ; justification en dessous
+            children.push(hl(`${STATUS_META[st].symbol} ${stripBold(it.text)}`, st, { bold: true }));
+          } else if (detailLines.length && isLabel(it.text)) {
+            // « terme : définition » : seul un terme court (≤ 6 mots) est en gras
+            children.push(...runs(it.text, { bold: true }), run(" : "), ...runs(detailLines[0]));
+            rest = detailLines.slice(1);
+          } else {
+            // titre d'un élément qui porte des blocs (question du tuteur…) en gras, sinon texte normal
+            children.push(...runs(it.text, { bold: !!it.blocks?.length && !detailLines.length }));
+          }
           return [
             new Paragraph({
               spacing: listSpacing,
+              keepNext: rest.length > 0,
               numbering: { reference: b.style, level: it.level, instance: b.instance },
               children,
             }),
+            // une ligne = un paragraphe, en retrait sous l'élément (jamais de saut de ligne dans un run)
+            ...rest.map((line) => new Paragraph({ spacing: listSpacing, indent: { left: Math.max(720, indent) }, children: runs(line) })),
             ...(it.blocks ?? []).flatMap((rb) => richBlock(rb, indent)),
           ];
         });
