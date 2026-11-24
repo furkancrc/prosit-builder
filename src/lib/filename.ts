@@ -31,7 +31,7 @@ export function shortTheme(theme: string): string {
 /**
  * Variables du gabarit :
  * {type} aller/retour · {Type} Aller/Retour · {theme} thème court (avant « : ») · {themeComplet}
- * {numero} · {nom} · {bloc} · {date} · {auteur} · {groupe}
+ * {numero} · {nom} · {bloc} (= thème / matière, gardé pour les anciens gabarits) · {date} · {auteur} · {groupe}
  */
 export function buildFilename(template: string, meta: Meta, type: DocType): string {
   const vars: Record<string, string> = {
@@ -41,7 +41,7 @@ export function buildFilename(template: string, meta: Meta, type: DocType): stri
     themeComplet: meta.theme,
     numero: meta.numero,
     nom: meta.nom,
-    bloc: meta.bloc,
+    bloc: meta.theme || meta.bloc,
     date: meta.date,
     auteur: meta.auteur,
     groupe: meta.groupe,

@@ -9,7 +9,7 @@ import { DOC_STYLES, type DocStyle } from "@/lib/doc-model";
 import { DEFAULT_SETTINGS, DOC_FONTS, SettingsSchema, type Settings } from "@/lib/schema";
 
 const ACCENTS = ["#FFE600", "#F59E0B", "#22C55E", "#3B82F6", "#E11D48"];
-const VARS = ["{type}", "{Type}", "{theme}", "{themeComplet}", "{numero}", "{nom}", "{bloc}", "{date}", "{auteur}", "{groupe}"];
+const VARS = ["{type}", "{Type}", "{theme}", "{themeComplet}", "{numero}", "{nom}", "{date}", "{auteur}", "{groupe}"];
 
 export function SettingsForm({ initial }: { initial: Settings }) {
   const router = useRouter();
@@ -66,9 +66,6 @@ export function SettingsForm({ initial }: { initial: Settings }) {
             </Field>
             <Field label="Groupe / classe">
               <input className="field" value={s.groupe} onChange={(e) => set("groupe", e.target.value)} placeholder="FISA A3" />
-            </Field>
-            <Field label="Bloc / projet" className="sm:col-span-2">
-              <input className="field" value={s.bloc} onChange={(e) => set("bloc", e.target.value)} placeholder="SI et Sécurité 2026-27" />
             </Field>
           </div>
         </Card>

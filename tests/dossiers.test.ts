@@ -43,7 +43,7 @@ describe("dossiers en base", () => {
   it("un prosit créé dans une matière en reprend le bloc et le groupe", () => {
     const si = db.listDossiers()[0].matieres[0];
     const id = db.createProsit({}, undefined, si.id);
-    expect(db.getProsit(id)).toMatchObject({ matiereId: si.id, bloc: si.nom, groupe: "FISA A3" });
+    expect(db.getProsit(id)).toMatchObject({ matiereId: si.id, theme: si.nom, bloc: si.nom, groupe: "FISA A3" });
     expect(db.getProsit(db.duplicateProsit(id)!)?.matiereId).toBe(si.id);
     expect(() => db.createProsit({}, undefined, "inconnue")).toThrow(db.UnknownMatiereError);
   });

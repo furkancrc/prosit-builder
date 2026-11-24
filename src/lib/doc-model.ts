@@ -153,7 +153,7 @@ export function buildDocModel(meta: Meta, type: DocType, rawContent: Content, st
     style === "classique" && meta.theme,
     // le style rapport affiche déjà « Boucle PBL n : thème » en tête
     meta.numero && `Prosit n° ${meta.numero}`,
-    meta.bloc,
+    // le bloc (matière) n'est plus affiché : c'est le thème / la matière, déjà dans le titre
     meta.auteur && (meta.groupe ? `${meta.auteur} (${meta.groupe})` : meta.auteur),
     !meta.auteur && meta.groupe,
     meta.date && formatDateFr(meta.date),

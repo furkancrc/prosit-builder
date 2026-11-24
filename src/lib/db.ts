@@ -235,14 +235,14 @@ export function createProsit(meta: Partial<Meta>, contents?: Partial<Record<DocT
   const s = getSettings();
   const id = randomUUID();
   const t = now();
-  // Créé dans une matière : le bloc et le groupe du document en sont déduits.
+  // Créé dans une matière : le thème (= matière), le bloc et le groupe du document en sont déduits.
   const place = matiereId
     ? (db().prepare("SELECT m.nom AS bloc, a.nom AS groupe FROM matieres m JOIN annees a ON a.id = m.annee_id WHERE m.id = ?").get(matiereId) as { bloc: string; groupe: string } | undefined)
     : undefined;
   if (matiereId && !place) throw new UnknownMatiereError();
   const m: Meta = {
     nom: meta.nom ?? "",
-    theme: meta.theme ?? "",
+    theme: meta.theme || place?.bloc || "",
     numero: meta.numero ?? "",
     bloc: meta.bloc ?? place?.bloc ?? s.bloc,
     date: meta.date ?? t.slice(0, 10),

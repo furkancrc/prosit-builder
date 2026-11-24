@@ -17,7 +17,6 @@ export function docToText(meta: Meta, type: DocType, rawContent: Content): strin
   const info = [
     meta.theme && `Thème : ${meta.theme}`,
     meta.numero && `Prosit n° ${meta.numero}`,
-    meta.bloc && `Bloc : ${meta.bloc}`,
   ].filter(Boolean);
   if (info.length) out.push(info.join(" · "));
 

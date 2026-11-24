@@ -35,7 +35,7 @@ Web app pour rédiger les **prosits aller / retour** du CESI et les exporter en 
   - Ctrl+S pour télécharger en Word, Ctrl+Alt+L pour changer de thème.
 - Bouton thème clair/sombre dans l'en-tête, et lien vers le sujet du prosit (non exporté).
 - Téléchargement Word ou PDF, avec un nom de fichier prérempli à partir d'un gabarit et modifiable.
-- Réglages : auteur, classe, bloc, gabarit de nom, couleur d'accent, mode clair/sombre, police et couleur des titres du document.
+- Réglages : auteur, classe, gabarit de nom, couleur d'accent, mode clair/sombre, police et couleur des titres du document.
 - **Assistant de rédaction IA** (Perplexity), uniquement à la demande : bouton « Assistant » dans l'éditeur.
   - Il reçoit tout le prosit (et l'aller quand on est sur le retour), la rubrique en cours et le texte des **liens d'aide** enregistrés pour le prosit (cours, ressources données par l'école).
   - Actions rapides : proposer du contenu pour la rubrique, la corriger, relire tout le prosit ; ou question libre.
@@ -173,7 +173,7 @@ tests/                   Vitest
 ### Gabarit de nom de fichier
 
 Par défaut : `Prosit_{type}_{theme}_-_{numero}`, ce qui donne `Prosit_aller_SI_-_1.docx`.
-Variables : `{type}` (aller/retour), `{Type}`, `{theme}` (partie avant « : »), `{themeComplet}`, `{numero}`, `{nom}`, `{bloc}`, `{date}`, `{auteur}`, `{groupe}`. Les accents et les caractères interdits sont retirés.
+Variables : `{type}` (aller/retour), `{Type}`, `{theme}` (partie avant « : »), `{themeComplet}`, `{numero}`, `{nom}`, `{date}`, `{auteur}`, `{groupe}`. (`{bloc}` reste accepté comme synonyme de `{themeComplet}`.) Les accents et les caractères interdits sont retirés.
 
 ### Prosit retour
 
