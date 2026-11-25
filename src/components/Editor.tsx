@@ -29,6 +29,7 @@ import { useHistory } from "./useHistory";
 import { SaveIndicator, useSaver } from "./useSaver";
 import {
   IconBack,
+  IconCards,
   IconChevron,
   IconDownload,
   IconExpand,
@@ -380,6 +381,12 @@ ${add}` : add;
     return () => ch.removeEventListener("message", onMsg);
   }, [presentationState]);
 
+  /** Révision (cartes) : enregistre d'abord, les cartes sont lues depuis la base. */
+  const openRevision = async () => {
+    await flush().catch(() => undefined);
+    router.push(`/prosits/${prositId}/revision`);
+  };
+
   const openPresentation = () => {
     window.open(`/prosits/${prositId}/presentation?tab=${tab}`, `presentation-${prositId}`, "popup,width=1280,height=800");
   };
@@ -549,6 +556,9 @@ ${add}` : add;
             </button>
             <button className="btn" onClick={openPresentation} title="Ouvrir la vue à projeter">
               <IconPresent /> <span className="hidden md:inline">Présentation</span>
+            </button>
+            <button className="btn" onClick={openRevision} title="Réviser le prosit retour avec des cartes (mots clés, notions, questions…)">
+              <IconCards /> <span className="hidden md:inline">Réviser</span>
             </button>
             <button className="btn" onClick={() => fileRef.current?.click()} title="Pré-remplir depuis un .docx existant">
               <IconUpload /> <span className="hidden md:inline">Importer</span>
