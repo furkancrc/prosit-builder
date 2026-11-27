@@ -116,7 +116,7 @@ describe("plan d'action", () => {
 describe("formatProsit", () => {
   const retour: Content = {
     contexte: "Analyser le besoin.\nNeoLink veut  uniformiser **son** administration [1].",
-    motsInconnus: [li("**Switch** : relie les machines"), li("Contexte")],
+    motsCles: [li("**Switch** : relie les machines"), li("Contexte")],
     pistes: [li("✔ Hypothèse sur l'AD → confirmée"), li("Hypothèse sur l'AD", { status: "valid" })],
     etude: [li("Comprendre l'AD", { detail: "L'annuaire Microsoft.\n- Forêt : ensemble de domaines" })],
     syntheseIntro: "Un **SI** est organisé.",
@@ -128,7 +128,7 @@ describe("formatProsit", () => {
     expect(f.syntheseIntro).toBe("Un **SI** est organisé.");
   });
   it("sépare « terme : définition » et garde un mot clé qui ressemble à un titre", () => {
-    expect((f.motsInconnus as ListItem[]).map((i) => [i.text, i.detail])).toEqual([
+    expect((f.motsCles as ListItem[]).map((i) => [i.text, i.detail])).toEqual([
       ["Switch", "Relie les machines"],
       ["Contexte", undefined],
     ]);

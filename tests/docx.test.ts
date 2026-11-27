@@ -23,7 +23,7 @@ const content: Content = {
   roleSecretaire: "Bruno",
   roleScribe: "Furkan",
   roleGestionnaire: "Bruno",
-  motsInconnus: [li("Statistiques descriptives"), li("Switch & Routeur <L3>")],
+  motsCles: [li("Statistiques descriptives"), li("Switch & Routeur <L3>")],
   contexte: "Emma est stagiaire…\nDeuxième paragraphe.",
   probleme: "Comment analyser statistiquement les données ?",
   contraintes: [li("Données sur 24 h")],
@@ -102,7 +102,8 @@ describe("buildDocx (modèle Boucle PBL)", () => {
     ]);
     const retour: Content = {
       ...content,
-      motsInconnus: [{ ...li("Accès"), detail: "Possibilité d’utiliser une ressource" }, li("CPU")],
+      motsCles: [{ ...li("Accès"), detail: "Possibilité d’utiliser une ressource" }, li("CPU")],
+      motsInconnus: [{ ...li("NAS"), detail: "Stockage relié au réseau" }],
       pistes: [
         { ...li("Segmentation réseau"), status: "valid", detail: "Confirmé par le schéma" },
         { ...li("DHCP mal paramétré"), status: "partial", blocks: [{ id: "t1", type: "text", text: "C'est partiellement vrai." }] },
@@ -128,6 +129,7 @@ describe("buildDocx (modèle Boucle PBL)", () => {
     expect(doc).toContain("PROSIT RETOUR");
     expect(doc).toContain("PROSIT RETOUR / CER");
     expect(doc).toContain(">Mot clé<"); // mots clés en tableau (format CER)
+    expect(doc).toMatch(/MOTS CLÉS[\s\S]*>Accès<[\s\S]*MOTS INCONNUS[\s\S]*>Mot inconnu<[\s\S]*>NAS<[\s\S]*CONTEXTE/); // tableau séparé
     expect(doc).toContain(">Possibilité d’utiliser une ressource<");
     expect(doc).toContain('w:fill="9BE89B"'); // surlignage vert
     expect(doc).toContain('w:fill="FFC870"'); // orange
@@ -144,10 +146,11 @@ describe("buildDocx (modèle Boucle PBL)", () => {
     const back = await importDocx(buf, "retour", () => `asset-${++n}`);
     type It = { text: string; detail?: string; status?: string; blocks?: { type: string; columns?: number; images?: { caption: string }[]; rows?: string[][]; text?: string }[] };
     const get = (k: string) => back.content[k] as It[];
-    expect(get("motsInconnus").map((i) => [i.text, i.detail])).toEqual([
+    expect(get("motsCles").map((i) => [i.text, i.detail])).toEqual([
       ["Accès", "Possibilité d’utiliser une ressource"],
       ["CPU", undefined],
     ]);
+    expect(get("motsInconnus").map((i) => [i.text, i.detail])).toEqual([["NAS", "Stockage relié au réseau"]]);
     expect(get("pistes").map((i) => [i.text, i.status])).toEqual([
       ["Segmentation réseau", "valid"],
       ["DHCP mal paramétré", "partial"],
@@ -187,7 +190,7 @@ describe("buildDocx (modèle Boucle PBL)", () => {
       expect(res.content[k], k).toBe(content[k]);
     }
     const strip = (v: unknown) => (v as { text: string; level: number }[]).map(({ text, level }) => ({ text, level }));
-    for (const k of ["motsInconnus", "contraintes", "livrables", "pistes", "etude"]) {
+    for (const k of ["motsCles", "contraintes", "livrables", "pistes", "etude"]) {
       expect(strip(res.content[k]), k).toEqual(strip(content[k]));
     }
     // plan d'action : les sous-éléments reviennent dans l'élément parent (étapes / points), comme après formatProsit
@@ -239,7 +242,7 @@ describe("import du format « Boucle PBL » (titres en tableau, puces ■ en tex
     expect(r.meta.theme).toBe("Stats OS : Clefs de Performance");
     expect(r.content.roleAnimateur).toBe("Alice");
     expect(r.content.roleGestionnaire).toBe("Bruno");
-    expect(t(r, "motsInconnus")).toEqual([["CPU", 0], ["Python", 0]]);
+    expect(t(r, "motsCles")).toEqual([["CPU", 0], ["Python", 0]]);
     expect(r.content.contexte).toBe("Emma est stagiaire.");
     expect(r.content.probleme).toBe("Comment analyser ?");
     expect(t(r, "contraintes")).toEqual([["Données sur 24 h", 0]]);
@@ -314,9 +317,9 @@ describe("buildDocModel", () => {
   it("numérote les sections sauf Rôles et signale les champs vides", () => {
     const m = buildDocModel(meta, "aller", {});
     const sections = m.blocks.filter((b) => b.kind === "section");
-    expect(sections).toHaveLength(9);
+    expect(sections).toHaveLength(10);
     expect(sections[0]).toMatchObject({ title: "RÔLES", num: undefined });
-    expect(sections[8]).toMatchObject({ num: "VIII" });
+    expect(sections[9]).toMatchObject({ num: "IX" });
     expect(m.blocks.some((b) => b.kind === "empty")).toBe(true);
     expect(m.title).toBe("Boucle PBL : Stats OS : Clefs de Performance");
     expect(m.info).toContain("17/11/2026");

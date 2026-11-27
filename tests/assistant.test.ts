@@ -16,14 +16,14 @@ describe("docToText", () => {
   it("liste toutes les rubriques, marque les vides et garde définitions et statuts", () => {
     const c = emptyContent(getTemplate("retour"));
     c.contexte = "Une PME a des problèmes d'accès.";
-    c.motsInconnus = [{ id: "a", text: "VLAN", level: 0, detail: "Réseau local virtuel" }];
+    c.motsCles = [{ id: "a", text: "VLAN", level: 0, detail: "Réseau local virtuel" }];
     c.pistes = [{ id: "b", text: "Mauvaise segmentation", level: 0, status: "valid" }];
     const t = docToText(meta, "retour", c);
     expect(t).toContain("# Prosit retour — Prosit SI - 1");
-    expect(t).toContain("## II. Contexte\nUne PME a des problèmes d'accès.");
+    expect(t).toContain("## III. Contexte\nUne PME a des problèmes d'accès.");
     expect(t).toContain("- VLAN\n  Définition : Réseau local virtuel");
     expect(t).toContain("- Mauvaise segmentation [Validée]");
-    expect(t).toMatch(/## III\. Problématique\n\(vide\)/);
+    expect(t).toMatch(/## IV\. Problématique\n\(vide\)/);
     expect(t).toContain("### Études");
   });
 });

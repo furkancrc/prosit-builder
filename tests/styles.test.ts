@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS, type Content, type ListItem, type Meta } from "@/lib/
 const meta: Meta = { nom: "Prosit aller SI - 2", theme: "SI : Administration", numero: "2", bloc: "", date: "", auteur: "", groupe: "", lien: "" };
 const li = (text: string, extra: Partial<ListItem> = {}): ListItem => ({ id: Math.random().toString(36).slice(2), text, level: 0, ...extra });
 const content: Content = {
-  motsInconnus: [li("OU"), li("GPO")],
+  motsCles: [li("OU"), li("GPO")],
   contexte: "Neolink veut uniformiser son administration.",
   probleme: "Comment administrer un SI ?",
   contraintes: [li("Système en production")],
@@ -28,7 +28,8 @@ describe("styles de mise en page", () => {
     expect(outline("classique")).toEqual([
       "I. Prendre connaissance de la situation et clarifier",
       "  1) Mots clés :",
-      "  2) Contexte :",
+      "  2) Mots inconnus :",
+      "  3) Contexte :",
       "II. Analyser le besoin",
       "  1) Problème :",
       "  2) Contraintes :",
@@ -41,10 +42,10 @@ describe("styles de mise en page", () => {
     ]);
   });
 
-  it("CESI : rubriques plates I à VIII inchangées", () => {
+  it("CESI : rubriques plates I à IX", () => {
     const o = outline("cesi");
     expect(o[0]).toBe("-. RÔLES");
-    expect(o).toContain("VIII. PLAN D’ACTION");
+    expect(o).toContain("IX. PLAN D’ACTION");
     expect(o.some((x) => x.includes(")"))).toBe(false);
   });
 
@@ -52,7 +53,7 @@ describe("styles de mise en page", () => {
     const m = buildDocModel(meta, "aller", content, "classique");
     const navs = m.blocks.flatMap((b) => (b.kind === "h2" && b.nav ? [`${b.text}→${b.nav}`] : []));
     expect(navs).toContain("Mots clés :→2");
-    expect(navs).toContain("Livrables :→6");
+    expect(navs).toContain("Livrables :→7");
   });
 
   it("l'export Word suit le style choisi", async () => {

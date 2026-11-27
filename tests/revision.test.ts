@@ -5,7 +5,7 @@ import type { Content } from "@/lib/schema";
 describe("buildCards", () => {
   it("crée une carte par élément qui a un verso", () => {
     const content: Content = {
-      motsInconnus: [
+      motsCles: [
         { id: "a", text: "SI", level: 0, detail: "Système d’information" },
         { id: "b", text: "Sans définition", level: 0 },
       ],
@@ -14,7 +14,7 @@ describe("buildCards", () => {
       contexte: "texte libre",
     };
     const cards = buildCards(content);
-    expect(cards.map((c) => c.id)).toEqual(["motsInconnus:a", "pistes:p", "etude:e"]);
+    expect(cards.map((c) => c.id)).toEqual(["motsCles:a", "pistes:p", "etude:e"]);
     expect(cards[0].back).toEqual(["Système d’information"]);
     expect(cards[1].status).toBe("invalid");
   });

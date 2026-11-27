@@ -69,23 +69,23 @@ describe("reprise de l'aller dans le retour", () => {
   const aller = {
     contexte: "Contexte aller",
     roleScribe: "Furkan",
-    motsInconnus: [{ id: "a", text: "Accès", level: 0 }, { id: "b", text: "CPU", level: 0 }],
+    motsCles: [{ id: "a", text: "Accès", level: 0 }, { id: "b", text: "CPU", level: 0 }],
   };
   it("pré-remplit un retour vide", () => {
     const { content, added } = mergeAllerIntoRetour(aller, {});
     expect(added).toBe(4);
     expect(content.contexte).toBe("Contexte aller");
-    expect((content.motsInconnus as { text: string }[]).map((i) => i.text)).toEqual(["Accès", "CPU"]);
+    expect((content.motsCles as { text: string }[]).map((i) => i.text)).toEqual(["Accès", "CPU"]);
     expect(isContentEmpty(content)).toBe(false);
   });
   it("n'écrase rien et garde les définitions", () => {
     const retour = {
       contexte: "Contexte du retour",
-      motsInconnus: [{ id: "x", text: "accès ", level: 0, detail: "Définition gardée" }],
+      motsCles: [{ id: "x", text: "accès ", level: 0, detail: "Définition gardée" }],
     };
     const { content, added } = mergeAllerIntoRetour(aller, retour);
     expect(content.contexte).toBe("Contexte du retour");
-    const mots = content.motsInconnus as { text: string; detail?: string }[];
+    const mots = content.motsCles as { text: string; detail?: string }[];
     expect(mots).toHaveLength(2);
     expect(mots[0].detail).toBe("Définition gardée");
     expect(added).toBe(2); // rôle scribe + « CPU »

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveRetourContent, mergeAllerIntoRetour, sameItem } from "@/lib/templates";
+import { RETOUR_TEMPLATE, coerceContent, effectiveRetourContent, mergeAllerIntoRetour, sameItem } from "@/lib/templates";
 import type { Content, ListItem } from "@/lib/schema";
 
 const li = (text: string, extra: Partial<ListItem> = {}): ListItem => ({ id: Math.random().toString(36).slice(2), text, level: 0, ...extra });
@@ -23,7 +23,7 @@ describe("fusion intelligente aller → retour", () => {
     contexte: "Emma est stagiaire chez OPTIMAL.",
     probleme: "Comment analyser les données ?",
     roleScribe: "Furkan",
-    motsInconnus: [li("CPU"), li("Mémoire"), li("Trafic réseau"), li("Python")],
+    motsCles: [li("CPU"), li("Mémoire"), li("Trafic réseau"), li("Python")],
     contraintes: [li("Données sur 24 h"), li("Fréquence 1 minute")],
     pistes: [li("Calculer la moyenne"), li("Automatiser avec Python")],
   };
@@ -39,12 +39,12 @@ describe("fusion intelligente aller → retour", () => {
   it("garde ce qui est écrit dans le retour (texte, définitions, statuts)", () => {
     const retour: Content = {
       contexte: "Contexte réécrit au retour.",
-      motsInconnus: [li("cpu", { detail: "Processeur" })],
+      motsCles: [li("cpu", { detail: "Processeur" })],
       pistes: [li("Calculer la moyenne", { status: "valid", detail: "Fait en TP" })],
     };
     const c = effectiveRetourContent(aller, retour);
     expect(c.contexte).toBe("Contexte réécrit au retour.");
-    const mots = c.motsInconnus as ListItem[];
+    const mots = c.motsCles as ListItem[];
     expect(mots[0]).toMatchObject({ text: "cpu", detail: "Processeur" });
     expect(mots).toHaveLength(4); // pas de doublon « CPU »
     const pistes = c.pistes as ListItem[];
@@ -54,11 +54,11 @@ describe("fusion intelligente aller → retour", () => {
 
   it("insère les éléments manquants à leur place (ordre de l'aller)", () => {
     const retour: Content = {
-      motsInconnus: [li("Python", { detail: "Langage" }), li("CPU", { detail: "Processeur" }), li("VLAN", { detail: "Ajouté au retour" })],
+      motsCles: [li("Python", { detail: "Langage" }), li("CPU", { detail: "Processeur" }), li("VLAN", { detail: "Ajouté au retour" })],
     };
     const c = effectiveRetourContent(aller, retour);
     // « Mémoire » et « Trafic réseau » suivaient « CPU » dans l'aller → insérés juste après lui
-    expect(texts(c, "motsInconnus")).toEqual(["Python", "CPU", "Mémoire", "Trafic réseau", "VLAN"]);
+    expect(texts(c, "motsCles")).toEqual(["Python", "CPU", "Mémoire", "Trafic réseau", "VLAN"]);
   });
 
   it("insère après les sous-éléments de l'élément précédent", () => {
@@ -68,7 +68,7 @@ describe("fusion intelligente aller → retour", () => {
   });
 
   it("compte ce qui a été ajouté et ne modifie pas les données d'origine", () => {
-    const retour: Content = { motsInconnus: [li("CPU")] };
+    const retour: Content = { motsCles: [li("CPU")] };
     const snapshot = JSON.stringify(retour);
     const { added } = mergeAllerIntoRetour(aller, retour);
     expect(added).toBe(3 + 2 + 2 + 3); // 3 mots, 2 contraintes, 2 pistes, contexte + problème + scribe
@@ -87,12 +87,12 @@ describe("sections du retour", () => {
 
   it("masque les sections propres au retour quand elles sont vides", () => {
     const t = titles({});
-    expect(t).toContain("VIII PLAN D’ACTION");
+    expect(t).toContain("IX PLAN D’ACTION");
     expect(t.some((x) => /SYNTHÈSE|QUESTIONS|AAV|SOURCES/.test(x))).toBe(false);
   });
   it("renumérote les sections affichées", () => {
     const t = titles({ questions: [li("Qu’est-ce qu’un SI ?")], sources: [li("manager-go.com")] });
-    expect(t.slice(-2)).toEqual(["IX QUESTIONS DU TUTEUR", "X SOURCES"]);
+    expect(t.slice(-2)).toEqual(["X QUESTIONS DU TUTEUR", "XI SOURCES"]);
   });
 });
 
@@ -103,7 +103,7 @@ describe("import intelligent (fusion, jamais de remplacement)", () => {
   const existing: Content = {
     contexte: "Emma est stagiaire chez OPTIMAL.",
     probleme: "Comment analyser les données ?",
-    motsInconnus: [li("CPU", { detail: "Processeur" }), li("Mémoire"), li("Python")],
+    motsCles: [li("CPU", { detail: "Processeur" }), li("Mémoire"), li("Python")],
     pistes: [li("Calculer la moyenne", { status: "valid" })],
   };
 
@@ -111,14 +111,14 @@ describe("import intelligent (fusion, jamais de remplacement)", () => {
     const imported: Content = {
       contexte: "",
       probleme: "Une autre problématique formulée autrement",
-      motsInconnus: [li("cpu", { detail: "Unité centrale" }), li("Mémoire", { detail: "RAM" }), li("Trafic réseau", { detail: "Débit" })],
+      motsCles: [li("cpu", { detail: "Unité centrale" }), li("Mémoire", { detail: "RAM" }), li("Trafic réseau", { detail: "Débit" })],
       pistes: [li("Calculer la moyenne", { status: "partial", detail: "Fait en TP" }), li("Visualiser les données", { status: "invalid" })],
     };
     const { content, stats } = mergeImported("retour", existing, imported);
     expect(content.contexte).toBe("Emma est stagiaire chez OPTIMAL."); // vide dans le fichier → gardé
     expect(content.probleme).toBe("Comment analyser les données ?"); // différent → l'existant est gardé
     expect(stats.kept).toEqual(["Problématique"]);
-    const mots = content.motsInconnus as ListItem[];
+    const mots = content.motsCles as ListItem[];
     expect(mots.map((m) => [m.text, m.detail])).toEqual([
       ["CPU", "Processeur"], // définition existante conservée
       ["Mémoire", "RAM"], // définition ajoutée
@@ -169,5 +169,18 @@ describe("fusion : hypothèses reformulées au retour", () => {
       "L'accès aux dossiers partagés sur le réseau se met en place via des GPO",
       "Il faut deux serveurs pour répartir les tâches",
     ]);
+  });
+});
+
+describe("mots clés / mots inconnus", () => {
+  it("un ancien prosit (mots clés rangés sous motsInconnus) garde sa rubrique Mots clés", () => {
+    const c = coerceContent(RETOUR_TEMPLATE, { motsInconnus: [li("CPU", { detail: "Processeur" })] });
+    expect(texts(c, "motsCles")).toEqual(["CPU"]);
+    expect(c.motsInconnus).toEqual([]);
+  });
+  it("un prosit récent garde les deux rubriques séparées", () => {
+    const c = coerceContent(RETOUR_TEMPLATE, { motsCles: [li("PRA")], motsInconnus: [li("NAS")] });
+    expect(texts(c, "motsCles")).toEqual(["PRA"]);
+    expect(texts(c, "motsInconnus")).toEqual(["NAS"]);
   });
 });

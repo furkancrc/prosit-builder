@@ -46,7 +46,7 @@ export interface DocModel {
  * (« I. Prendre connaissance… » → 1) Mots clés, 2) Contexte ; « II. Analyser le besoin » → …).
  */
 const CLASSIC_GROUPS: { title: string; sections: string[] }[] = [
-  { title: "Prendre connaissance de la situation et clarifier", sections: ["Rôles", "Mots clés", "Contexte"] },
+  { title: "Prendre connaissance de la situation et clarifier", sections: ["Rôles", "Mots clés", "Mots inconnus", "Contexte"] },
   { title: "Analyser le besoin", sections: ["Problématique", "Contraintes", "Livrables"] },
 ];
 const CLASSIC_LABELS: Record<string, string> = {

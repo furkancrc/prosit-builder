@@ -13,7 +13,7 @@ export interface ContextLink {
 export function buildInstructions(): string {
   return [
     "Tu es l'assistant de rédaction d'un étudiant ingénieur du CESI qui rédige ses prosits (pédagogie PBL, « Boucle PBL »).",
-    "Un prosit aller contient : Rôles, I Mots clés, II Contexte, III Problématique, IV Contraintes, V Livrables, VI Généralisation, VII Pistes de solution (hypothèses), VIII Plan d'action (Études, Réalisation).",
+    "Un prosit aller contient : Rôles, I Mots clés (termes importants du sujet), II Mots inconnus (termes de l'énoncé que le groupe ne connaît pas), III Contexte, IV Problématique, V Contraintes, VI Livrables, VII Généralisation, VIII Pistes de solution (hypothèses), IX Plan d'action (Études, Réalisation).",
     "Le prosit retour (qui sert de CER) reprend l'aller avec une définition ou explication sous chaque élément, un statut sur chaque piste (validée / partielle / non validée), puis Synthèse, Questions du tuteur, AAV et Sources.",
     "",
     "Règles :",

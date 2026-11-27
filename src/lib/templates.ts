@@ -67,8 +67,13 @@ export const ALLER_TEMPLATE: TemplateDef = {
     },
     {
       title: "Mots clés",
-      aliases: ["mots clees", "mots-clés", "mots inconnus", "mots cles"],
-      fields: [{ key: "motsInconnus", label: "Mots clés", kind: "list", heading: false, style: "bullet", placeholder: "Nouveau mot" }],
+      aliases: ["mots clees", "mots-clés", "mots cles", "mot cle"],
+      fields: [{ key: "motsCles", label: "Mots clés", kind: "list", heading: false, style: "bullet", placeholder: "Nouveau mot clé" }],
+    },
+    {
+      title: "Mots inconnus",
+      aliases: ["mot inconnu", "mots inconnu", "termes inconnus"],
+      fields: [{ key: "motsInconnus", label: "Mots inconnus", kind: "list", heading: false, style: "bullet", placeholder: "Nouveau mot inconnu" }],
     },
     {
       title: "Contexte",
@@ -111,7 +116,8 @@ export const ALLER_TEMPLATE: TemplateDef = {
 
 /** Ajouts du prosit retour par champ de liste : libellé de la définition, statut éventuel. */
 const RETOUR_LIST_EXTRAS: Record<string, { detail: string; status?: boolean; rich?: boolean; asTable?: [string, string] }> = {
-  motsInconnus: { detail: "Définition", rich: true, asTable: ["Mot clé", "Définition"] },
+  motsCles: { detail: "Définition", rich: true, asTable: ["Mot clé", "Définition"] },
+  motsInconnus: { detail: "Définition", rich: true, asTable: ["Mot inconnu", "Définition"] },
   contraintes: { detail: "Explication", rich: true },
   livrables: { detail: "Réalisé / commentaire", rich: true },
   pistes: { detail: "Justification", status: true, rich: true },
@@ -206,6 +212,12 @@ export function emptyContent(t: TemplateDef): Content {
 export function coerceContent(t: TemplateDef, raw: Content | undefined): Content {
   const out = emptyContent(t);
   if (!raw) return out;
+  // anciens prosits : la rubrique « Mots clés » était rangée sous la clé `motsInconnus`
+  // → elle reste la rubrique « Mots clés », « Mots inconnus » démarre vide
+  if (raw.motsCles === undefined && raw.motsInconnus !== undefined) {
+    const { motsInconnus, ...rest } = raw;
+    raw = { ...rest, motsCles: motsInconnus };
+  }
   for (const f of allFields(t)) {
     const v: FieldValue | undefined = raw[f.key];
     if (v === undefined) continue;

@@ -23,7 +23,8 @@ export interface Card {
 
 /** Rubriques qui donnent des cartes, avec l'intitulé de la catégorie et la consigne du recto. */
 export const DECKS: { key: string; label: string; prompt: string }[] = [
-  { key: "motsInconnus", label: "Mots clés", prompt: "Définir" },
+  { key: "motsCles", label: "Mots clés", prompt: "Définir" },
+  { key: "motsInconnus", label: "Mots inconnus", prompt: "Définir" },
   { key: "notions", label: "Notions", prompt: "Expliquer" },
   { key: "questions", label: "Questions du tuteur", prompt: "Répondre" },
   { key: "pistes", label: "Hypothèses", prompt: "Validée ou non ? Pourquoi ?" },

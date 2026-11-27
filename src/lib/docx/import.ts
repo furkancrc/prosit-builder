@@ -384,7 +384,7 @@ export function importFromXml(
     if (!hasImages && f?.kind === "list" && f.asTable && n.rows.every((r) => r.length === 2)) {
       const rows = [...n.rows];
       const head = normKey(rows[0][0].text);
-      if (head === normKey(f.asTable[0]) || /^(motcle|motscles|terme|notion)$/.test(head)) rows.shift();
+      if (head === normKey(f.asTable[0]) || /^(motcle|motscles|motinconnu|motsinconnus|terme|notion)$/.test(head)) rows.shift();
       const items = rows
         .filter((r) => r[0].text.trim())
         .map((r): DraftItem => ({ text: r[0].text.trim(), detail: r[1].text.trim() || undefined, rawLevel: 0, blocks: [] }));
